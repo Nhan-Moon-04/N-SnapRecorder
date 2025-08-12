@@ -71,6 +71,18 @@ class RecordingController:
         """Check if recording"""
         return self.engine.is_recording
 
+    def pause_recording(self):
+        """Pause recording"""
+        return self.engine.pause_recording()
+
+    def resume_recording(self):
+        """Resume recording"""
+        return self.engine.resume_recording()
+
+    def toggle_pause(self):
+        """Toggle pause/resume"""
+        return self.engine.toggle_pause()
+
     def cleanup(self):
         """Cleanup resources"""
         try:

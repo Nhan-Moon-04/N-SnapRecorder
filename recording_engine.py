@@ -22,6 +22,7 @@ class RecordingEngine:
     def __init__(self):
         # recording state
         self.is_recording = False
+        self.is_paused = False
         self.record_thread = None
         self.audio_queue = queue.Queue()
         self.audio_stream = None
@@ -107,6 +108,26 @@ class RecordingEngine:
         else:
             return self.start_recording()
 
+    def pause_recording(self):
+        if self.is_recording and not self.is_paused:
+            self.is_paused = True
+            self.update_status("Paused")
+            return True
+        return False
+
+    def resume_recording(self):
+        if self.is_recording and self.is_paused:
+            self.is_paused = False
+            self.update_status("Recording")
+            return True
+        return False
+
+    def toggle_pause(self):
+        if self.is_paused:
+            return self.resume_recording()
+        else:
+            return self.pause_recording()
+
     def _audio_callback(self, indata, frames, time_info, status):
         """Audio callback for recording"""
         if not self.is_recording:
@@ -155,7 +176,12 @@ class RecordingEngine:
                 h = self.settings['custom_h']
 
         fps = max(1, int(self.settings['record_fps']))
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+        if self.settings['record_format'] == 'mp4':
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            video_path_raw = os.path.join(folder, basename + '.mp4')
+        else:
+            fourcc = cv2.VideoWriter_fourcc(*'XVID')
+            video_path_raw = os.path.join(folder, basename + '.avi')
         out = cv2.VideoWriter(video_path_raw, fourcc, fps, (w, h))
 
         # start audio stream if enabled
@@ -187,6 +213,9 @@ class RecordingEngine:
             with mss.mss() as sct:
                 region = {"left": x, "top": y, "width": w, "height": h}
                 while self.is_recording:
+                    if self.is_paused:
+                        time.sleep(0.1)
+                        continue
                     t0 = time.time()
                     img = sct.grab(region)
                     frame = np.array(img)

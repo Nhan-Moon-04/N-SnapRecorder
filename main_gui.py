@@ -316,7 +316,10 @@ class ScreenshotGUI:
         rec_buttons.grid(row=8, column=0, columnspan=3, pady=10)
         self.rec_start_btn = ttk.Button(rec_buttons, text="Start Recording", command=self.start_recording)
         self.rec_start_btn.pack(side=tk.LEFT, padx=4)
-        ttk.Button(rec_buttons, text="Stop Recording", command=self.stop_recording).pack(side=tk.LEFT, padx=4)
+        self.rec_pause_btn = ttk.Button(rec_buttons, text="Pause", command=self.pause_recording, state="disabled")
+        self.rec_pause_btn.pack(side=tk.LEFT, padx=4)
+        self.rec_stop_btn = ttk.Button(rec_buttons, text="Stop Recording", command=self.stop_recording, state="disabled")
+        self.rec_stop_btn.pack(side=tk.LEFT, padx=4)
 
         self.rec_status_var = tk.StringVar(value="Idle")
         ttk.Label(rec_frame, textvariable=self.rec_status_var, font=('Arial',9,'bold')).grid(row=9, column=0, columnspan=3, pady=6)
@@ -365,6 +368,10 @@ class ScreenshotGUI:
             return
         self.recording_controller.start_recording()
 
+    def pause_recording(self):
+        """Pause/Resume recording"""
+        self.recording_controller.toggle_pause()
+    
     def stop_recording(self):
         """Stop screen recording"""
         self.recording_controller.stop_recording()
@@ -402,6 +409,16 @@ class ScreenshotGUI:
     def update_rec_status(self, message):
         """Update recording status label"""
         self.rec_status_var.set(message)
+        if message.lower().startswith("recording"):
+            self.rec_start_btn.config(state="disabled")
+            self.rec_pause_btn.config(state="normal", text="Pause")
+            self.rec_stop_btn.config(state="normal")
+        elif message.lower().startswith("paused"):
+            self.rec_pause_btn.config(state="normal", text="Resume")
+        elif message.lower().startswith("idle") or message.lower().startswith("saved"):
+            self.rec_start_btn.config(state="normal")
+            self.rec_pause_btn.config(state="disabled", text="Pause")
+            self.rec_stop_btn.config(state="disabled")
 
     def update_memory_usage(self):
         """Update memory usage display"""
