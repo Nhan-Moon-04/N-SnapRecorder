@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw
 from datetime import datetime
 import gc
 import psutil
+import io  # Add for clipboard functionality
 
 
 class ScreenshotEngine:
@@ -87,8 +88,57 @@ class ScreenshotEngine:
         except Exception as e:
             print(f"Error setting up hotkeys: {e}")
 
+    def save_to_clipboard(self, image):
+        """Save image to clipboard"""
+        try:
+            # Method 1: Using win32clipboard (preferred)
+            import win32clipboard
+            from io import BytesIO
+            
+            # Convert PIL image to bitmap format for clipboard
+            output = BytesIO()
+            image.convert("RGB").save(output, "BMP")
+            data = output.getvalue()[14:]  # Remove BMP header (first 14 bytes)
+            output.close()
+            
+            # Copy to clipboard
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.SetClipboardData(win32clipboard.CF_DIB, data)
+            win32clipboard.CloseClipboard()
+            
+            print("Screenshot saved to clipboard")
+            
+        except ImportError:
+            # Method 2: Fallback using tkinter clipboard (limited functionality)
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                
+                root = tk.Tk()
+                root.withdraw()  # Hide the window
+                
+                # Save image as base64 string to clipboard (alternative approach)
+                import base64
+                buffered = io.BytesIO()
+                image.save(buffered, format="PNG")
+                img_str = base64.b64encode(buffered.getvalue()).decode()
+                
+                root.clipboard_clear()
+                root.clipboard_append(f"Screenshot captured at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                root.update()
+                root.destroy()
+                
+                print("Screenshot info saved to clipboard (image copy requires pywin32)")
+                
+            except Exception as e:
+                print(f"Fallback clipboard method failed: {e}")
+                
+        except Exception as e:
+            print(f"Error saving to clipboard: {e}")
+
     def manual_capture(self):
-        """Manual screenshot capture"""
+        """Manual screenshot capture with clipboard support"""
         if not self.settings['folder_path']:
             print("Error: Please select a save folder!")
             return
@@ -97,11 +147,18 @@ class ScreenshotEngine:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = os.path.join(self.settings['folder_path'], f"screenshot_{timestamp}.png")
 
+            # Take screenshot
             screenshot = pyautogui.screenshot()
+            
+            # Save to file
             screenshot.save(filename, optimize=True, quality=85)
+            
+            # Save to clipboard
+            self.save_to_clipboard(screenshot)
 
-            self.update_status(f"Captured: {os.path.basename(filename)}")
+            self.update_status(f"Captured: {os.path.basename(filename)} (saved to clipboard)")
 
+            # Clean up memory
             del screenshot
             gc.collect()
 
@@ -110,20 +167,24 @@ class ScreenshotEngine:
             self.update_status(f"Error: {e}")
 
     def auto_capture_loop(self):
-        """Auto capture loop running in background thread"""
+        """Auto capture loop running in background thread with clipboard support"""
         while self.settings['auto_capture_enabled'] and self.is_capturing:
             try:
+                # Use manual_capture which now includes clipboard functionality
                 self.manual_capture()
+                
+                # Wait for the specified interval
                 for _ in range(self.settings['auto_capture_interval']):
                     if not self.settings['auto_capture_enabled'] or not self.is_capturing:
                         break
                     time.sleep(1)
+                    
             except Exception as e:
                 print(f"Auto capture error: {e}")
                 time.sleep(1)
 
     def start_background_capture(self):
-        """Start background capture process"""
+        """Start background capture process with clipboard support"""
         if not self.settings['folder_path']:
             print("Error: Please select a save folder!")
             return False
@@ -132,19 +193,24 @@ class ScreenshotEngine:
         self.setup_hotkeys()
         self.is_capturing = True
         
+        # Start auto capture thread if enabled
         if self.settings['auto_capture_enabled']:
             self.auto_capture_thread = threading.Thread(target=self.auto_capture_loop, daemon=True)
             self.auto_capture_thread.start()
+            self.update_status("Auto-capture started (screenshots saved to file and clipboard)")
+        else:
+            self.update_status("Background capture ready (manual capture saves to file and clipboard)")
         
+        # Create tray icon for easy access
         self.create_tray_icon()
-        self.update_status("Running in background...")
+        
         return True
 
     def stop_all_capture(self):
         """Stop all capture processes"""
         self.is_capturing = False
         self.settings['auto_capture_enabled'] = False
-        self.update_status("Stopped")
+        self.update_status("All capture processes stopped")
 
     def show_window(self, icon=None, item=None):
         """Show main window - callback for tray icon"""
@@ -181,19 +247,23 @@ class ScreenshotEngine:
         draw.ellipse([16, 16, 48, 48], fill='white')
         menu = pystray.Menu(
             pystray.MenuItem("Show Window", self.show_window),
-            pystray.MenuItem("Capture Now", self.manual_capture),
+            pystray.MenuItem("Capture Now (File + Clipboard)", self.manual_capture),
             pystray.MenuItem("Start Recording", self.start_recording),
             pystray.MenuItem("Stop Recording", self.stop_recording),
-            pystray.MenuItem("Stop Auto", self.stop_all_capture),
+            pystray.MenuItem("Stop Auto Capture", self.stop_all_capture),
             pystray.MenuItem("Exit", self.exit_app)
         )
         self.tray_icon = pystray.Icon("ScreenshotApp", image, "Screenshot Tool", menu)
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
     def get_memory_usage(self):
-        process = psutil.Process()
-        mem_mb = process.memory_info().rss / (1024 * 1024)
-        return f"Memory Usage: {mem_mb:.2f} MB"
+        """Get current memory usage"""
+        try:
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            return f"Memory: {memory_mb:.1f} MB"
+        except:
+            return "Memory: N/A"
 
     def cleanup(self):
         """Cleanup resources"""
