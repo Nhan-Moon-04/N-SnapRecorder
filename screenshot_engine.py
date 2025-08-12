@@ -191,13 +191,9 @@ class ScreenshotEngine:
         threading.Thread(target=self.tray_icon.run, daemon=True).start()
 
     def get_memory_usage(self):
-        """Get current memory usage"""
-        try:
-            process = psutil.Process()
-            memory_mb = process.memory_info().rss / 1024 / 1024
-            return f"Memory: {memory_mb:.1f} MB"
-        except:
-            return "Memory: N/A"
+        process = psutil.Process()
+        mem_mb = process.memory_info().rss / (1024 * 1024)
+        return f"Memory Usage: {mem_mb:.2f} MB"
 
     def cleanup(self):
         """Cleanup resources"""

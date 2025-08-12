@@ -1,13 +1,24 @@
 @echo off
-echo Installing required packages...
+echo =======================================
+echo Installing required Python packages...
+echo =======================================
 pip install -r requirements.txt
 
 echo.
-echo Creating executable file...
+echo =======================================
+echo Installing PyInstaller...
+echo =======================================
 pip install pyinstaller
 
-pyinstaller --onefile --windowed --icon=icon.ico AutoScreenshot.py
+echo.
+echo =======================================
+echo Creating executable file from run_app.py...
+echo =======================================
+pyinstaller --noconfirm --onefile --windowed --icon=icon.ico --name "N-SnapRecorde" run_app.py
 
 echo.
-echo Build complete! Check the 'dist' folder for your exe file.
+echo =======================================
+echo Build complete!
+echo Your EXE file is in the "dist" folder with name: N-SnapRecorde.exe
+echo =======================================
 pause

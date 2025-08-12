@@ -68,7 +68,7 @@ class ScreenshotGUI:
         )
         
         # Start memory monitoring
-        self.update_memory_usage()
+        
 
     def setup_variables(self):
         """Setup tkinter variables and sync with engine settings"""
@@ -209,6 +209,8 @@ class ScreenshotGUI:
         hotkey_frame = ttk.Frame(main_frame, borderwidth=1, relief="solid", padding="5")
         hotkey_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
+
+    
         ttk.Label(hotkey_frame, text="Capture hotkey:").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.capture_entry = ttk.Entry(hotkey_frame, textvariable=self.capture_hotkey, width=20)
         self.capture_entry.grid(row=1, column=1, sticky=tk.W, padx=5)
@@ -246,18 +248,28 @@ class ScreenshotGUI:
 
         ttk.Button(control_frame, text="Capture Now", command=self.manual_capture).pack(side=tk.LEFT, padx=5)
 
+
+
         status_frame = ttk.Frame(main_frame)
         status_frame.grid(row=8, column=0, columnspan=2, pady=(5, 0))
 
+        # Nút tick Show Memory Usage
+        self.show_memory_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(
+            status_frame,
+            text="Show Memory Usage",
+            variable=self.show_memory_var
+        ).pack(side=tk.LEFT, padx=5)
+
         self.status_var = tk.StringVar(value="Ready")
-        self.status_label = ttk.Label(status_frame, textvariable=self.status_var, 
-                                      foreground="green", font=('Arial', 9, 'bold'))
-        self.status_label.pack()
+        self.status_label = ttk.Label(status_frame, textvariable=self.status_var,
+                                    foreground="green", font=('Arial', 9, 'bold'))
+        self.status_label.pack(side=tk.LEFT, padx=5)
 
         self.memory_var = tk.StringVar()
-        self.memory_label = ttk.Label(status_frame, textvariable=self.memory_var, 
-                                      font=('Arial', 8), foreground="gray")
-        self.memory_label.pack(pady=(5, 0))
+        self.memory_label = ttk.Label(status_frame, textvariable=self.memory_var,
+                                    font=('Arial', 8), foreground="gray")
+        self.memory_label.pack(side=tk.LEFT, padx=5)
 
         # Add tooltips
         ToolTip(self.capture_entry, "Press key combination (e.g., ctrl+alt+s)")
@@ -421,10 +433,14 @@ class ScreenshotGUI:
             self.rec_stop_btn.config(state="disabled")
 
     def update_memory_usage(self):
-        """Update memory usage display"""
-        memory_info = self.screenshot_engine.get_memory_usage()
-        self.memory_var.set(memory_info)
+        """Update memory usage display if enabled"""
+        if self.show_memory_var.get():
+            memory_info = self.screenshot_engine.get_memory_usage()
+            self.memory_var.set(memory_info)
+        else:
+            self.memory_var.set("")
         self.root.after(5000, self.update_memory_usage)
+
 
     def run(self):
         """Start the GUI main loop"""

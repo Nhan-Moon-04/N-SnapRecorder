@@ -7,6 +7,7 @@ import time
 import threading
 from datetime import datetime
 import gc
+from tkinter import messagebox
 
 # Recording dependencies
 import mss
@@ -72,7 +73,7 @@ class RecordingEngine:
             return False
         
         if not self.settings['folder_path']:
-            print("Error: Please select a save folder!")
+            messagebox.showerror('Error', 'Please select a save folder!')
             return False
 
         self.is_recording = True
