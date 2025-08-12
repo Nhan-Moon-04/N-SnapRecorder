@@ -3,3 +3,9 @@ Pillow==10.0.0
 keyboard==0.13.5
 pystray==0.19.4
 psutil==5.9.5
+mss==9.0.1
+opencv-python==4.8.1.78
+sounddevice==0.4.6
+numpy==1.24.3
+scipy==1.11.1
+ffmpeg-python==0.2.0
