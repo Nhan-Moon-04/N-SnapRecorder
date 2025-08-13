@@ -23,6 +23,8 @@ class ScreenshotEngine:
         self.capture_thread = None
         self.auto_capture_thread = None
         self.tray_icon = None
+        
+        self.tray_icon_created = False
 
         # Optimize pyautogui
         pyautogui.FAILSAFE = False
@@ -192,7 +194,7 @@ class ScreenshotEngine:
         self.save_settings()
         self.setup_hotkeys()
         self.is_capturing = True
-        
+
         # Start auto capture thread if enabled
         if self.settings['auto_capture_enabled']:
             self.auto_capture_thread = threading.Thread(target=self.auto_capture_loop, daemon=True)
@@ -200,11 +202,14 @@ class ScreenshotEngine:
             self.update_status("Auto-capture started (screenshots saved to file and clipboard)")
         else:
             self.update_status("Background capture ready (manual capture saves to file and clipboard)")
-        
-        # Create tray icon for easy access
-        self.create_tray_icon()
-        
+
+        # Create tray icon only once
+        if not self.tray_icon_created:
+            self.create_tray_icon()
+            self.tray_icon_created = True
+
         return True
+
 
     def stop_all_capture(self):
         """Stop all capture processes"""
@@ -272,6 +277,9 @@ class ScreenshotEngine:
         if self.tray_icon:
             try:
                 self.tray_icon.stop()
+                self.tray_icon = None
+                self.tray_icon_created = False
+
             except:
                 pass
         keyboard.unhook_all()

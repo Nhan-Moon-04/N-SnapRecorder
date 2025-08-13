@@ -3,7 +3,7 @@
   "capture_hotkey": "Alt+Q",
   "stop_hotkey": "alt+e",
   "auto_capture_enabled": false,
-  "auto_capture_interval": 60,
+  "auto_capture_interval": 3,
   "record_hotkey": "Alt+T",
   "stop_record_hotkey": "alt+y",
   "record_fps": 20,
@@ -15,5 +15,6 @@
   "custom_h": 600,
   "record_audio_enabled": false,
   "audio_samplerate": 44100,
-  "audio_channels": 1
+  "audio_channels": 1,
+  "auto_start_hotkey": "ctrl+shift+b"
 }

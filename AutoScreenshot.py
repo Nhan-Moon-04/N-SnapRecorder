@@ -89,6 +89,12 @@ class ScreenshotApp:
         self.stop_hotkey = tk.StringVar(value="ctrl+shift+q")
         self.auto_capture_enabled = tk.BooleanVar()
         self.auto_capture_interval = tk.IntVar(value=60)
+        self.auto_start_hotkey = tk.StringVar(value=\"ctrl+shift+a\")
+        self.auto_pause_hotkey = tk.StringVar(value=\"ctrl+shift+p\")
+        self.auto_stop_hotkey = tk.StringVar(value=\"ctrl+shift+o\")
+        self.auto_start_hotkey = tk.StringVar(value=\"ctrl+shift+a\")
+        self.auto_pause_hotkey = tk.StringVar(value=\"ctrl+shift+p\")
+        self.auto_stop_hotkey = tk.StringVar(value=\"ctrl+shift+o\")
 
         # recording variables
         self.record_hotkey = tk.StringVar(value="ctrl+shift+r")
@@ -115,6 +121,12 @@ class ScreenshotApp:
                     self.stop_hotkey.set(settings.get('stop_hotkey', 'ctrl+shift+q'))
                     self.auto_capture_enabled.set(settings.get('auto_capture_enabled', False))
                     self.auto_capture_interval.set(settings.get('auto_capture_interval', 60))
+                    self.auto_start_hotkey.set(settings.get('auto_start_hotkey', 'ctrl+shift+a'))
+                    self.auto_pause_hotkey.set(settings.get('auto_pause_hotkey', 'ctrl+shift+p'))
+                    self.auto_stop_hotkey.set(settings.get('auto_stop_hotkey', 'ctrl+shift+o'))
+                    self.auto_start_hotkey.set(settings.get('auto_start_hotkey', 'ctrl+shift+a'))
+                    self.auto_pause_hotkey.set(settings.get('auto_pause_hotkey', 'ctrl+shift+p'))
+                    self.auto_stop_hotkey.set(settings.get('auto_stop_hotkey', 'ctrl+shift+o'))
 
                     # recording settings
                     self.record_hotkey.set(settings.get('record_hotkey', 'ctrl+shift+r'))
@@ -141,6 +153,12 @@ class ScreenshotApp:
                 'stop_hotkey': self.stop_hotkey.get(),
                 'auto_capture_enabled': self.auto_capture_enabled.get(),
                 'auto_capture_interval': self.auto_capture_interval.get(),
+                'auto_start_hotkey': self.auto_start_hotkey.get(),
+                'auto_pause_hotkey': self.auto_pause_hotkey.get(),
+                'auto_stop_hotkey': self.auto_stop_hotkey.get(),
+                'auto_start_hotkey': self.auto_start_hotkey.get(),
+                'auto_pause_hotkey': self.auto_pause_hotkey.get(),
+                'auto_stop_hotkey': self.auto_stop_hotkey.get(),
 
                 # recording settings
                 'record_hotkey': self.record_hotkey.get(),
@@ -223,8 +241,23 @@ class ScreenshotApp:
         self.stop_entry.grid(row=2, column=1, sticky=tk.W, padx=5)
         self.stop_entry.bind('<FocusOut>', self.validate_hotkey)
 
+        ttk.Label(hotkey_frame, text="Auto Start hotkey:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        self.auto_start_entry = ttk.Entry(hotkey_frame, textvariable=self.auto_start_hotkey, width=20)
+        self.auto_start_entry.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.auto_start_entry.bind('<FocusOut>', self.validate_hotkey)
+
+        ttk.Label(hotkey_frame, text="Auto Pause hotkey:").grid(row=4, column=0, sticky=tk.W, pady=2)
+        self.auto_pause_entry = ttk.Entry(hotkey_frame, textvariable=self.auto_pause_hotkey, width=20)
+        self.auto_pause_entry.grid(row=4, column=1, sticky=tk.W, padx=5)
+        self.auto_pause_entry.bind('<FocusOut>', self.validate_hotkey)
+
+        ttk.Label(hotkey_frame, text="Auto Stop hotkey:").grid(row=5, column=0, sticky=tk.W, pady=2)
+        self.auto_stop_entry = ttk.Entry(hotkey_frame, textvariable=self.auto_stop_hotkey, width=20)
+        self.auto_stop_entry.grid(row=5, column=1, sticky=tk.W, padx=5)
+        self.auto_stop_entry.bind('<FocusOut>', self.validate_hotkey)
+
         test_btn = ttk.Button(hotkey_frame, text="Test Hotkeys", command=self.test_hotkeys)
-        test_btn.grid(row=3, column=0, columnspan=2, pady=(5, 0))
+        test_btn.grid(row=6, column=0, columnspan=2, pady=(5, 0))
 
         auto_header = ttk.Label(main_frame, text="AUTO CAPTURE", style='Title.TLabel')
         auto_header.grid(row=5, column=0, sticky=tk.W, pady=(10, 5))
@@ -336,6 +369,12 @@ class ScreenshotApp:
             keyboard.unhook_all()
             keyboard.add_hotkey(self.capture_hotkey.get(), self.manual_capture)
             keyboard.add_hotkey(self.stop_hotkey.get(), self.stop_all_capture)
+            keyboard.add_hotkey(self.auto_start_hotkey.get(), self.start_auto_capture)
+            keyboard.add_hotkey(self.auto_pause_hotkey.get(), self.pause_auto_capture)
+            keyboard.add_hotkey(self.auto_stop_hotkey.get(), self.stop_all_capture)
+            keyboard.add_hotkey(self.auto_start_hotkey.get(), self.start_auto_capture)
+            keyboard.add_hotkey(self.auto_pause_hotkey.get(), self.pause_auto_capture)
+            keyboard.add_hotkey(self.auto_stop_hotkey.get(), self.stop_all_capture)
             # recording hotkeys
             keyboard.add_hotkey(self.record_hotkey.get(), self.toggle_recording)
             keyboard.add_hotkey(self.stop_record_hotkey.get(), self.stop_recording)
@@ -400,9 +439,15 @@ class ScreenshotApp:
         if self.auto_capture_enabled.get():
             self.auto_capture_thread = threading.Thread(target=self.auto_capture_loop, daemon=True)
             self.auto_capture_thread.start()
-        self.create_tray_icon()
+
+        # chỉ tạo icon nếu chưa tạo
+        if not hasattr(self, 'tray_icon_created') or not self.tray_icon_created:
+            self.create_tray_icon()
+            self.tray_icon_created = True
+
         self.root.withdraw()
         self.status_var.set("Running in background...")
+
 
     def stop_all_capture(self):
         self.is_capturing = False
@@ -410,6 +455,8 @@ class ScreenshotApp:
         self.status_var.set("Stopped")
 
     def create_tray_icon(self):
+        if self.tray_icon and self.tray_icon.visible:
+            return
         image = Image.new('RGB', (64, 64), color='blue')
         draw = ImageDraw.Draw(image)
         draw.ellipse([16, 16, 48, 48], fill='white')
@@ -640,6 +687,24 @@ class ScreenshotApp:
 
             self.rec_status_var.set(f"Saved: {os.path.basename(final_path)}")
             gc.collect()
+
+
+    def start_auto_capture(self):
+        if not self.is_capturing:
+            self.is_capturing = True
+            self.auto_capture_enabled.set(True)
+            self.auto_capture_thread = threading.Thread(target=self.auto_capture_loop, daemon=True)
+            self.auto_capture_thread.start()
+            self.status_var.set("Auto Capture started")
+        else:
+            self.status_var.set("Already capturing")
+
+    def pause_auto_capture(self):
+        if self.is_capturing and self.auto_capture_enabled.get():
+            self.auto_capture_enabled.set(False)
+            self.status_var.set("Auto Capture paused")
+        else:
+            self.status_var.set("Auto Capture not active")
 
     # ----------------- end recording logic -----------------
 

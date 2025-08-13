@@ -41,7 +41,9 @@ class RecordingEngine:
             'record_audio_enabled': True,
             'audio_samplerate': 44100,
             'audio_channels': 1
-        }
+        ,
+    'audio_device': None
+}
 
         # Callback for UI updates
         self.status_callback = None
@@ -195,7 +197,8 @@ class RecordingEngine:
                     samplerate=samplerate, 
                     channels=channels, 
                     callback=self._audio_callback
-                )
+                ,
+    device=self.settings.get('audio_device'))
                 self.audio_stream.start()
                 audio_thread = threading.Thread(
                     target=self._write_audio_to_wav, 
