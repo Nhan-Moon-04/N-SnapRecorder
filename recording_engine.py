@@ -156,7 +156,7 @@ class RecordingEngine:
             wf.close()
 
     def _record_worker(self):
-        """Main recording worker thread"""
+        """Main recording worker thread - Real-time recording"""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         basename = f"record_{timestamp}"
         folder = self.settings['folder_path']
@@ -178,16 +178,20 @@ class RecordingEngine:
                 w = self.settings['custom_w']
                 h = self.settings['custom_h']
 
-        fps = max(1, int(self.settings['record_fps']))
+        # FPS settings - capped for performance
+        fps = max(10, min(60, int(self.settings['record_fps'])))  # Limit FPS range
+        target_frame_time = 1.0 / fps
+        
         if self.settings['record_format'] == 'mp4':
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             video_path_raw = os.path.join(folder, basename + '.mp4')
         else:
             fourcc = cv2.VideoWriter_fourcc(*'XVID')
-            video_path_raw = os.path.join(folder, basename + '.avi')
+            
         out = cv2.VideoWriter(video_path_raw, fourcc, fps, (w, h))
 
         # start audio stream if enabled
+        audio_thread = None
         if self.settings['record_audio_enabled']:
             samplerate = int(self.settings['audio_samplerate'])
             channels = int(self.settings['audio_channels'])
@@ -196,9 +200,9 @@ class RecordingEngine:
                 self.audio_stream = sd.InputStream(
                     samplerate=samplerate, 
                     channels=channels, 
-                    callback=self._audio_callback
-                ,
-    device=self.settings.get('audio_device'))
+                    callback=self._audio_callback,
+                    device=self.settings.get('audio_device')
+                )
                 self.audio_stream.start()
                 audio_thread = threading.Thread(
                     target=self._write_audio_to_wav, 
@@ -211,38 +215,75 @@ class RecordingEngine:
                 self.settings['record_audio_enabled'] = False
 
         self.update_status('Recording')
-        frame_period = 1.0 / fps
+        
+        # Real-time timing variables
+        start_time = time.time()
+        frame_count = 0
+        last_frame_time = start_time
 
         try:
             with mss.mss() as sct:
                 region = {"left": x, "top": y, "width": w, "height": h}
+                
                 while self.is_recording:
                     if self.is_paused:
-                        time.sleep(0.1)
+                        # When paused, adjust start_time to maintain real-time sync
+                        pause_start = time.time()
+                        while self.is_paused and self.is_recording:
+                            time.sleep(0.1)
+                        if self.is_recording:  # If not stopped during pause
+                            pause_duration = time.time() - pause_start
+                            start_time += pause_duration  # Adjust timeline
                         continue
-                    t0 = time.time()
-                    img = sct.grab(region)
-                    frame = np.array(img)
-                    # convert BGRA to BGR
-                    if frame.shape[2] == 4:
-                        frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
-                    out.write(frame)
-
-                    # sleep to keep fps
-                    elapsed = time.time() - t0
-                    to_sleep = frame_period - elapsed
-                    if to_sleep > 0:
-                        time.sleep(to_sleep)
+                    
+                    current_time = time.time()
+                    elapsed_time = current_time - start_time
+                    expected_frame = int(elapsed_time * fps)
+                    
+                    # Only capture if we need a new frame
+                    if frame_count <= expected_frame:
+                        # Capture frame
+                        img = sct.grab(region)
+                        frame = np.array(img)
+                        
+                        # Convert BGRA to BGR
+                        if frame.shape[2] == 4:
+                            frame = cv2.cvtColor(frame, cv2.COLOR_BGRA2BGR)
+                        
+                        # Write frame - may write multiple times if we're behind
+                        frames_to_write = min(3, expected_frame - frame_count + 1)  # Limit catch-up
+                        for _ in range(frames_to_write):
+                            out.write(frame)
+                            frame_count += 1
+                        
+                        last_frame_time = current_time
+                    
+                    # Smart sleep - adjust based on next frame time
+                    next_frame_time = start_time + (frame_count / fps)
+                    sleep_time = next_frame_time - time.time()
+                    
+                    if sleep_time > 0:
+                        time.sleep(min(sleep_time, target_frame_time))
+                    elif sleep_time < -0.1:  # If we're significantly behind
+                        # Skip to current time to prevent permanent lag
+                        frame_count = expected_frame
+                        
         except Exception as e:
             print('Recording error:', e)
         finally:
             out.release()
-            # stop audio
+            
+            # Stop audio
             if self.settings['record_audio_enabled'] and self.audio_stream:
                 try:
                     self.audio_stream.stop()
+                    self.audio_stream.close()
                 except:
                     pass
+            
+            # Wait for audio thread to finish
+            if audio_thread and audio_thread.is_alive():
+                audio_thread.join(timeout=3)
 
             # try merge audio + video using ffmpeg if available
             merged = False

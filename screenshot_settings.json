@@ -1,9 +1,9 @@
 {
   "folder_path": "D:/ScreenshotsTest",
-  "capture_hotkey": "Alt+T",
+  "capture_hotkey": "alt+t",
   "stop_hotkey": "alt+e",
-  "auto_capture_enabled": true,
-  "auto_capture_interval": 10,
+  "auto_capture_enabled": false,
+  "auto_capture_interval": 3,
   "record_hotkey": "Alt+T",
   "stop_record_hotkey": "alt+y",
   "record_fps": 20,

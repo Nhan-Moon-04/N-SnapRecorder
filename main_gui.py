@@ -34,12 +34,12 @@ class ToolTip:
             tw,
             text=self.text,
             justify=tk.LEFT,
-            background="#ffffe0",
+            background="#ffffcc",
             relief=tk.SOLID,
             borderwidth=1,
-            font=("tahoma", "8", "normal"),
+            font=("Segoe UI", 8),
         )
-        label.pack(ipadx=1)
+        label.pack(ipadx=3, ipady=2)
 
     def hidetip(self, event=None):
         tw = self.tipwindow
@@ -53,6 +53,9 @@ class ScreenshotGUI:
         self.root = tk.Tk()
         self.screenshot_engine = ScreenshotEngine()
         self.recording_controller = RecordingController()
+        
+        # Add tray icon tracking flag
+        self.tray_icon_created = False
 
         # Setup GUI variables from engine settings
         self.setup_variables()
@@ -74,19 +77,14 @@ class ScreenshotGUI:
             exit_callback=self.quit_app,
         )
 
-        # Start memory monitoring (you can call self.update_memory_usage() if needed)
-
     def setup_variables(self):
         """Setup tkinter variables and sync with engine settings"""
         # Screenshot vars
         self.folder_path = tk.StringVar()
         self.capture_hotkey = tk.StringVar()
         self.stop_hotkey = tk.StringVar()
-        self.auto_capture_enabled = tk.BooleanVar()
         self.auto_capture_interval = tk.IntVar()
-        # NEW: duration (minutes)
         self.auto_capture_duration_min = tk.IntVar()
-        # NEW: Auto-capture hotkeys (user-configurable)
         self.auto_start_hotkey = tk.StringVar()
         self.auto_pause_hotkey = tk.StringVar()
         self.auto_stop_hotkey = tk.StringVar()
@@ -117,17 +115,12 @@ class ScreenshotGUI:
         self.folder_path.set(self.screenshot_engine.get_setting("folder_path"))
         self.capture_hotkey.set(self.screenshot_engine.get_setting("capture_hotkey"))
         self.stop_hotkey.set(self.screenshot_engine.get_setting("stop_hotkey"))
-        self.auto_capture_enabled.set(
-            self.screenshot_engine.get_setting("auto_capture_enabled")
-        )
         self.auto_capture_interval.set(
             self.screenshot_engine.get_setting("auto_capture_interval")
         )
-        # NEW: duration (minutes), default 0 => unlimited
         self.auto_capture_duration_min.set(
             self.screenshot_engine.get_setting("auto_capture_duration_min") or 0
         )
-        # NEW: auto hotkeys with defaults if engine chưa có
         self.auto_start_hotkey.set(
             self.screenshot_engine.get_setting("auto_start_hotkey") or "ctrl+shift+a"
         )
@@ -174,26 +167,18 @@ class ScreenshotGUI:
             "write",
             lambda *args: self._update_hotkey("stop_hotkey", self.stop_hotkey.get())
         )
-        self.auto_capture_enabled.trace_add(
-            "write",
-            lambda *args: self.screenshot_engine.update_setting(
-                "auto_capture_enabled", self.auto_capture_enabled.get()
-            ),
-        )
         self.auto_capture_interval.trace_add(
             "write",
             lambda *args: self.screenshot_engine.update_setting(
                 "auto_capture_interval", self.auto_capture_interval.get()
             ),
         )
-        # NEW: duration binding
         self.auto_capture_duration_min.trace_add(
             "write",
             lambda *args: self.screenshot_engine.update_setting(
                 "auto_capture_duration_min", self.auto_capture_duration_min.get()
             ),
         )
-        # NEW: Bind auto hotkeys to engine with hotkey refresh
         self.auto_start_hotkey.trace_add(
             "write",
             lambda *args: self._update_hotkey("auto_start_hotkey", self.auto_start_hotkey.get())
@@ -293,236 +278,445 @@ class ScreenshotGUI:
         # Refresh hotkeys in engine
         if hasattr(self.screenshot_engine, 'setup_hotkeys'):
             self.screenshot_engine.setup_hotkeys()
+        
+        # Bind hotkeys to GUI buttons directly
+        self._bind_hotkeys_to_buttons()
+
+    def _bind_hotkeys_to_buttons(self):
+        """Bind hotkeys directly to GUI button functions"""
+        try:
+            import keyboard as kb
+            
+            # Clear existing hotkeys
+            kb.unhook_all()
+            
+            # Bind hotkeys to button functions
+            if self.capture_hotkey.get():
+                kb.add_hotkey(self.capture_hotkey.get(), self.manual_capture)
+            
+            if self.stop_hotkey.get():
+                kb.add_hotkey(self.stop_hotkey.get(), self.on_auto_stop_btn)
+            
+            if self.auto_start_hotkey.get():
+                kb.add_hotkey(self.auto_start_hotkey.get(), self.on_auto_start_btn)
+            
+            if self.auto_pause_hotkey.get():
+                kb.add_hotkey(self.auto_pause_hotkey.get(), self.on_auto_pause_btn)
+            
+            if self.auto_stop_hotkey.get():
+                kb.add_hotkey(self.auto_stop_hotkey.get(), self.on_auto_stop_btn)
+                
+            # Recording hotkeys
+            if self.record_hotkey.get():
+                kb.add_hotkey(self.record_hotkey.get(), self.start_recording)
+            
+            if self.stop_record_hotkey.get():
+                kb.add_hotkey(self.stop_record_hotkey.get(), self.stop_recording)
+                
+        except Exception as e:
+            print(f"Hotkey binding error: {e}")
 
     def setup_gui(self):
-        self.root.title("Advanced Screenshot & ScreenRecorder Tool")
-        self.root.geometry("640x600")
-        self.root.resizable(False, False)
+        """Setup the main GUI with modern design"""
+        # Window configuration
+        self.root.title("Advanced Screenshot & Screen Recorder Tool")
+        self.root.geometry("900x650")
+        self.root.resizable(True, True)
+        self.root.configure(bg="#f0f0f0")
+        
+        # Set minimum size
+        self.root.minsize(850, 600)
 
         # Window icon and close handler
         self.root.protocol("WM_DELETE_WINDOW", self.on_window_close)
 
-        # Create styles
+        # Configure ttk style with clam theme
         style = ttk.Style()
-        style.configure("TLabel", font=("Arial", 9))
-        style.configure("TButton", font=("Arial", 9))
-        style.configure("TEntry", font=("Arial", 9))
-        style.configure("Title.TLabel", font=("Arial", 10, "bold"))
+        style.theme_use('clam')
+        
+        # Configure custom styles
+        style.configure("Title.TLabel", 
+                       font=("Segoe UI", 11, "bold"),
+                       foreground="#2c3e50",
+                       background="#f0f0f0")
+        
+        style.configure("Heading.TLabel", 
+                       font=("Segoe UI", 9, "bold"),
+                       foreground="#34495e",
+                       background="#f0f0f0")
+        
+        style.configure("TLabel", 
+                       font=("Segoe UI", 8),
+                       background="#f0f0f0")
+        
+        style.configure("TButton", 
+                       font=("Segoe UI", 8),
+                       padding=(6, 3))
+        
+        style.configure("TEntry", 
+                       font=("Segoe UI", 8),
+                       fieldbackground="white")
+        
+        style.configure("TCombobox", 
+                       font=("Segoe UI", 8),
+                       fieldbackground="white")
+        
+        style.configure("Action.TButton", 
+                       font=("Segoe UI", 8, "bold"),
+                       padding=(8, 4))
+        
+        style.configure("Status.TLabel", 
+                       font=("Segoe UI", 8, "bold"),
+                       foreground="#27ae60")
 
-        # Main frame with Notebook
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill="both", expand=True, padx=8, pady=8)
+        # Main container
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill="both", expand=True, padx=10, pady=8)
+
+        # Title label
+        title_label = ttk.Label(main_container, 
+                               text="Advanced Screenshot & Screen Recorder Tool", 
+                               style="Title.TLabel")
+        title_label.pack(pady=(0, 10))
+
+        # Create Notebook for tabs
+        self.notebook = ttk.Notebook(main_container)
+        self.notebook.pack(fill="both", expand=True)
 
         # Tab 1: Screenshot
-        tab1 = ttk.Frame(notebook)
-        notebook.add(tab1, text="Screenshot")
+        self.screenshot_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.screenshot_tab, text="📸 Screenshot")
 
         # Tab 2: Screen Recording
-        tab2 = ttk.Frame(notebook)
-        notebook.add(tab2, text="Screen Record")
+        self.recording_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.recording_tab, text="🎥 Screen Recording")
 
-        # ----------------- Screenshot Tab -----------------
-        self.setup_screenshot_tab(tab1)
+        # Setup tabs
+        self.setup_screenshot_tab()
+        self.setup_recording_tab()
 
-        # ----------------- Screen Recording Tab -----------------
-        self.setup_recording_tab(tab2)
+    def setup_screenshot_tab(self):
+        """Setup the screenshot tab with horizontal layout"""
+        main_frame = ttk.Frame(self.screenshot_tab)
+        main_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
-    def setup_screenshot_tab(self, parent):
-        """Setup the screenshot tab"""
-        main_frame = ttk.Frame(parent, padding="10")
-        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        # Top row - Save Location (full width)
+        location_frame = ttk.LabelFrame(main_frame, text="📁 Save Location", padding="10")
+        location_frame.pack(fill="x", pady=(0, 8))
 
-        folder_header = ttk.Label(main_frame, text="SAVE LOCATION", style="Title.TLabel")
-        folder_header.grid(row=0, column=0, sticky=tk.W, pady=(0, 5))
+        folder_container = ttk.Frame(location_frame)
+        folder_container.pack(fill="x")
+        folder_container.columnconfigure(0, weight=1)
 
-        ttk.Label(main_frame, text="Save folder:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        self.folder_entry = ttk.Entry(folder_container, textvariable=self.folder_path, width=80)
+        self.folder_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
 
-        folder_frame = ttk.Frame(main_frame)
-        folder_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        browse_btn = ttk.Button(folder_container, text="Browse...", command=self.select_folder)
+        browse_btn.grid(row=0, column=1)
 
-        folder_entry = ttk.Entry(folder_frame, textvariable=self.folder_path, width=50)
-        folder_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+        # Middle section - Two columns layout
+        middle_frame = ttk.Frame(main_frame)
+        middle_frame.pack(fill="both", expand=True, pady=(0, 8))
+        middle_frame.columnconfigure(0, weight=1)
+        middle_frame.columnconfigure(1, weight=1)
 
-        browse_btn = ttk.Button(folder_frame, text="Browse...", command=self.select_folder)
-        browse_btn.pack(side=tk.RIGHT, padx=(5, 0))
+        # Left column - Hotkey Settings
+        hotkey_frame = ttk.LabelFrame(middle_frame, text="⌨️ Hotkey Settings", padding="10")
+        hotkey_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
 
-        # hotkeys and auto capture
-        hotkey_header = ttk.Label(main_frame, text="HOTKEY SETTINGS", style="Title.TLabel")
-        hotkey_header.grid(row=3, column=0, sticky=tk.W, pady=(10, 5))
+        # Manual capture section
+        ttk.Label(hotkey_frame, text="Manual Capture:", style="Heading.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 5))
 
-        hotkey_frame = ttk.Frame(main_frame, borderwidth=1, relief="solid", padding="5")
-        hotkey_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
-
-        ttk.Label(hotkey_frame, text="Capture hotkey:").grid(row=1, column=0, sticky=tk.W, pady=2)
+        ttk.Label(hotkey_frame, text="Capture:").grid(row=1, column=0, sticky="w", pady=2)
         self.capture_entry = ttk.Entry(hotkey_frame, textvariable=self.capture_hotkey, width=20)
-        self.capture_entry.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.capture_entry.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=2)
         self.capture_entry.bind("<FocusOut>", self.validate_hotkey)
 
-        ttk.Label(hotkey_frame, text="Stop hotkey:").grid(row=2, column=0, sticky=tk.W, pady=2)
+        ttk.Label(hotkey_frame, text="Stop:").grid(row=2, column=0, sticky="w", pady=2)
         self.stop_entry = ttk.Entry(hotkey_frame, textvariable=self.stop_hotkey, width=20)
-        self.stop_entry.grid(row=2, column=1, sticky=tk.W, padx=5)
+        self.stop_entry.grid(row=2, column=1, sticky="w", padx=(5, 0), pady=2)
         self.stop_entry.bind("<FocusOut>", self.validate_hotkey)
 
-        # NEW: User-configurable auto-capture hotkeys (fixed quotes, no escapes)
-        ttk.Label(hotkey_frame, text="Auto Start hotkey:").grid(row=3, column=0, sticky=tk.W, pady=2)
+        # Auto capture section
+        ttk.Label(hotkey_frame, text="Auto Capture:", style="Heading.TLabel").grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(10, 5))
+
+        ttk.Label(hotkey_frame, text="Start:").grid(row=4, column=0, sticky="w", pady=2)
         self.auto_start_entry = ttk.Entry(hotkey_frame, textvariable=self.auto_start_hotkey, width=20)
-        self.auto_start_entry.grid(row=3, column=1, sticky=tk.W, padx=5)
+        self.auto_start_entry.grid(row=4, column=1, sticky="w", padx=(5, 0), pady=2)
         self.auto_start_entry.bind("<FocusOut>", self.validate_hotkey)
 
-        ttk.Label(hotkey_frame, text="Auto Pause hotkey:").grid(row=4, column=0, sticky=tk.W, pady=2)
+        ttk.Label(hotkey_frame, text="Pause:").grid(row=5, column=0, sticky="w", pady=2)
         self.auto_pause_entry = ttk.Entry(hotkey_frame, textvariable=self.auto_pause_hotkey, width=20)
-        self.auto_pause_entry.grid(row=4, column=1, sticky=tk.W, padx=5)
+        self.auto_pause_entry.grid(row=5, column=1, sticky="w", padx=(5, 0), pady=2)
         self.auto_pause_entry.bind("<FocusOut>", self.validate_hotkey)
 
-        ttk.Label(hotkey_frame, text="Auto Stop hotkey:").grid(row=5, column=0, sticky=tk.W, pady=2)
+        ttk.Label(hotkey_frame, text="Stop:").grid(row=6, column=0, sticky="w", pady=2)
         self.auto_stop_entry = ttk.Entry(hotkey_frame, textvariable=self.auto_stop_hotkey, width=20)
-        self.auto_stop_entry.grid(row=5, column=1, sticky=tk.W, padx=5)
+        self.auto_stop_entry.grid(row=6, column=1, sticky="w", padx=(5, 0), pady=2)
         self.auto_stop_entry.bind("<FocusOut>", self.validate_hotkey)
 
-        test_btn = ttk.Button(hotkey_frame, text="Test Hotkeys", command=self.test_hotkeys)
-        test_btn.grid(row=6, column=0, columnspan=2, pady=(5, 0))
+        test_btn = ttk.Button(hotkey_frame, text="🧪 Test Hotkeys", command=self.test_hotkeys)
+        test_btn.grid(row=7, column=0, columnspan=2, pady=(10, 0))
 
-        auto_header = ttk.Label(main_frame, text="AUTO CAPTURE", style="Title.TLabel")
-        auto_header.grid(row=5, column=0, sticky=tk.W, pady=(10, 5))
+        # Right column - Auto Capture Settings
+        auto_frame = ttk.LabelFrame(middle_frame, text="🔄 Auto Capture Settings", padding="10")
+        auto_frame.grid(row=0, column=1, sticky="nsew", padx=(4, 0))
 
-        auto_frame = ttk.Frame(main_frame, borderwidth=1, relief="solid", padding="5")
-        auto_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
+        # Control buttons
+        ttk.Label(auto_frame, text="Control Actions:", style="Heading.TLabel").grid(
+            row=0, column=0, columnspan=2, sticky="w", pady=(0, 8))
 
-        # REPLACE checkbox with 3 action buttons
-        action_btns = ttk.Frame(auto_frame)
-        action_btns.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
-        # store refs for state toggling
-        self.auto_start_btn = ttk.Button(action_btns, text="Start Auto", command=self.on_auto_start_btn)
-        self.auto_start_btn.pack(side=tk.LEFT, padx=(0, 5))
-        self.auto_pause_btn = ttk.Button(action_btns, text="Pause", command=self.on_auto_pause_btn, state="disabled")
-        self.auto_pause_btn.pack(side=tk.LEFT, padx=5)
-        self.auto_stop_btn = ttk.Button(action_btns, text="Stop Auto", command=self.on_auto_stop_btn, state="disabled")
-        self.auto_stop_btn.pack(side=tk.LEFT, padx=5)
+        action_frame = ttk.Frame(auto_frame)
+        action_frame.grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 10))
 
-        ttk.Label(auto_frame, text="Interval (seconds):").grid(row=1, column=0, sticky=tk.W, pady=2)
-        self.interval_spin = ttk.Spinbox(
-            auto_frame, from_=1, to=3600, textvariable=self.auto_capture_interval, width=10
-        )
-        self.interval_spin.grid(row=1, column=1, sticky=tk.W, padx=5)
+        self.auto_start_btn = ttk.Button(action_frame, text="▶️ Start", 
+                                        command=self.on_auto_start_btn, style="Action.TButton")
+        self.auto_start_btn.pack(side="left", padx=(0, 5))
 
-        # NEW: duration in minutes (0 => unlimited)
-        ttk.Label(auto_frame, text="Duration (minutes):").grid(row=2, column=0, sticky=tk.W, pady=2)
-        self.duration_spin = ttk.Spinbox(
-            auto_frame, from_=0, to=1440, textvariable=self.auto_capture_duration_min, width=10
-        )
-        self.duration_spin.grid(row=2, column=1, sticky=tk.W, padx=5)
+        self.auto_pause_btn = ttk.Button(action_frame, text="⏸️ Pause", 
+                                        command=self.on_auto_pause_btn, 
+                                        state="disabled", style="Action.TButton")
+        self.auto_pause_btn.pack(side="left", padx=(0, 5))
 
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=7, column=0, columnspan=2, pady=(15, 10))
+        self.auto_stop_btn = ttk.Button(action_frame, text="⏹️ Stop", 
+                                       command=self.on_auto_stop_btn, 
+                                       state="disabled", style="Action.TButton")
+        self.auto_stop_btn.pack(side="left")
 
-        self.start_btn = ttk.Button(
-            control_frame, text="Save & Run in Background", command=self.start_background
-        )
-        self.start_btn.pack(side=tk.LEFT, padx=5)
+        # Settings
+        ttk.Label(auto_frame, text="Timing Settings:", style="Heading.TLabel").grid(
+            row=2, column=0, columnspan=2, sticky="w", pady=(10, 5))
 
-        ttk.Button(control_frame, text="Capture Now", command=self.manual_capture).pack(
-            side=tk.LEFT, padx=5
-        )
+        ttk.Label(auto_frame, text="Interval (sec):").grid(row=3, column=0, sticky="w", pady=3)
+        self.interval_spin = ttk.Spinbox(auto_frame, from_=1, to=3600, 
+                                        textvariable=self.auto_capture_interval, width=12)
+        self.interval_spin.grid(row=3, column=1, sticky="w", padx=(5, 0), pady=3)
 
-        status_frame = ttk.Frame(main_frame)
-        status_frame.grid(row=8, column=0, columnspan=2, pady=(5, 0))
+        ttk.Label(auto_frame, text="Duration (min):").grid(row=4, column=0, sticky="w", pady=3)
+        self.duration_spin = ttk.Spinbox(auto_frame, from_=0, to=1440, 
+                                        textvariable=self.auto_capture_duration_min, width=12)
+        self.duration_spin.grid(row=4, column=1, sticky="w", padx=(5, 0), pady=3)
 
-        # Show Memory Usage checkbox
+        ttk.Label(auto_frame, text="(0=unlimited)", font=("Segoe UI", 7), foreground="#7f8c8d").grid(
+            row=5, column=1, sticky="w", padx=(5, 0))
+
+        # Bottom section - Actions and Status
+        bottom_frame = ttk.Frame(main_frame)
+        bottom_frame.pack(fill="x", pady=(0, 5))
+        bottom_frame.columnconfigure(0, weight=1)
+        bottom_frame.columnconfigure(1, weight=1)
+
+        # Main Actions
+        actions_frame = ttk.LabelFrame(bottom_frame, text="🚀 Main Actions", padding="10")
+        actions_frame.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+
+        control_buttons = ttk.Frame(actions_frame)
+        control_buttons.pack()
+
+        self.bg_btn = ttk.Button(control_buttons, text="💾 Save & Run Background", 
+                                command=self.save_and_run_background, style="Action.TButton")
+        self.bg_btn.pack(side="left", padx=(0, 8))
+
+        capture_now_btn = ttk.Button(control_buttons, text="📷 Capture Now", 
+                                    command=self.manual_capture, style="Action.TButton")
+        capture_now_btn.pack(side="left")
+
+        # Status Section
+        status_frame = ttk.LabelFrame(bottom_frame, text="📊 Status & Information", padding="10")
+        status_frame.grid(row=0, column=1, sticky="ew", padx=(4, 0))
+
         self.show_memory_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(
-            status_frame, text="Show Memory Usage", variable=self.show_memory_var
-        ).pack(side=tk.LEFT, padx=5)
+        memory_check = ttk.Checkbutton(status_frame, text="Show Memory", 
+                                      variable=self.show_memory_var)
+        memory_check.pack(anchor="w", pady=(0, 5))
 
+        status_info = ttk.Frame(status_frame)
+        status_info.pack(fill="x")
+
+        ttk.Label(status_info, text="Status:").pack(side="left")
         self.status_var = tk.StringVar(value="Ready")
-        self.status_label = ttk.Label(
-            status_frame, textvariable=self.status_var, foreground="green", font=("Arial", 9, "bold")
-        )
-        self.status_label.pack(side=tk.LEFT, padx=5)
+        self.status_label = ttk.Label(status_info, textvariable=self.status_var, 
+                                     style="Status.TLabel")
+        self.status_label.pack(side="left", padx=(5, 10))
 
         self.memory_var = tk.StringVar()
-        self.memory_label = ttk.Label(
-            status_frame, textvariable=self.memory_var, font=("Arial", 8), foreground="gray"
-        )
-        self.memory_label.pack(side=tk.LEFT, padx=5)
+        self.memory_label = ttk.Label(status_info, textvariable=self.memory_var, 
+                                     font=("Segoe UI", 7), foreground="#7f8c8d")
+        self.memory_label.pack(side="left")
 
-        # Tooltips
-        ToolTip(self.capture_entry, "Press key combination (e.g., ctrl+alt+s)")
-        ToolTip(self.stop_entry, "Press a different key combination")
-        ToolTip(self.auto_start_entry, "Hotkey to START auto capture")
-        ToolTip(self.auto_pause_entry, "Hotkey to PAUSE auto capture")
-        ToolTip(self.auto_stop_entry, "Hotkey to STOP auto capture")
-        ToolTip(self.interval_spin, "Time between auto captures")
-        ToolTip(self.duration_spin, "Auto-capture max duration in minutes (0 = unlimited)")
+        # Add tooltips
+        self.add_screenshot_tooltips()
 
-        folder_entry.focus_set()
+    def setup_recording_tab(self):
+        """Setup the recording tab with horizontal layout"""
+        main_frame = ttk.Frame(self.recording_tab)
+        main_frame.pack(fill="both", expand=True, padx=15, pady=10)
 
-    def setup_recording_tab(self, parent):
-        """Setup the recording tab"""
-        rec_frame = ttk.Frame(parent, padding="10")
-        rec_frame.pack(fill="both", expand=True)
+        # Top row - Save Location (full width)
+        location_frame = ttk.LabelFrame(main_frame, text="📁 Save Location", padding="10")
+        location_frame.pack(fill="x", pady=(0, 8))
 
-        rec_folder_label = ttk.Label(rec_frame, text="Save folder:")
-        rec_folder_label.grid(row=0, column=0, sticky=tk.W)
-        rec_folder_entry = ttk.Entry(rec_frame, textvariable=self.folder_path, width=50)
-        rec_folder_entry.grid(row=0, column=1, padx=5, pady=2)
-        ttk.Button(rec_frame, text="Browse...", command=self.select_folder).grid(row=0, column=2)
+        folder_container = ttk.Frame(location_frame)
+        folder_container.pack(fill="x")
+        folder_container.columnconfigure(0, weight=1)
 
-        ttk.Label(rec_frame, text="Recording Hotkey:").grid(row=1, column=0, sticky=tk.W, pady=6)
-        self.rec_hot_entry = ttk.Entry(rec_frame, textvariable=self.record_hotkey, width=20)
-        self.rec_hot_entry.grid(row=1, column=1, sticky=tk.W)
+        rec_folder_entry = ttk.Entry(folder_container, textvariable=self.folder_path, width=80)
+        rec_folder_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        rec_browse_btn = ttk.Button(folder_container, text="Browse...", command=self.select_folder)
+        rec_browse_btn.grid(row=0, column=1)
+
+        # Middle section - Three columns layout
+        middle_frame = ttk.Frame(main_frame)
+        middle_frame.pack(fill="both", expand=True, pady=(0, 8))
+        middle_frame.columnconfigure(0, weight=1)
+        middle_frame.columnconfigure(1, weight=1)
+        middle_frame.columnconfigure(2, weight=1)
+
+        # Left column - Hotkeys & Video Settings
+        left_frame = ttk.Frame(middle_frame)
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 4))
+
+        # Hotkey Settings
+        rec_hotkey_frame = ttk.LabelFrame(left_frame, text="⌨️ Recording Hotkeys", padding="10")
+        rec_hotkey_frame.pack(fill="x", pady=(0, 8))
+
+        ttk.Label(rec_hotkey_frame, text="Start Recording:").grid(row=0, column=0, sticky="w", pady=3)
+        self.rec_hot_entry = ttk.Entry(rec_hotkey_frame, textvariable=self.record_hotkey, width=18)
+        self.rec_hot_entry.grid(row=0, column=1, sticky="w", padx=(5, 0), pady=3)
         self.rec_hot_entry.bind("<FocusOut>", self.validate_hotkey)
 
-        ttk.Label(rec_frame, text="Stop Hotkey:").grid(row=2, column=0, sticky=tk.W, pady=6)
-        self.rec_stop_entry = ttk.Entry(rec_frame, textvariable=self.stop_record_hotkey, width=20)
-        self.rec_stop_entry.grid(row=2, column=1, sticky=tk.W)
+        ttk.Label(rec_hotkey_frame, text="Stop Recording:").grid(row=1, column=0, sticky="w", pady=3)
+        self.rec_stop_entry = ttk.Entry(rec_hotkey_frame, textvariable=self.stop_record_hotkey, width=18)
+        self.rec_stop_entry.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=3)
         self.rec_stop_entry.bind("<FocusOut>", self.validate_hotkey)
 
-        ttk.Label(rec_frame, text="FPS:").grid(row=3, column=0, sticky=tk.W, pady=6)
-        fps_spin = ttk.Spinbox(rec_frame, from_=5, to=120, textvariable=self.record_fps, width=10)
-        fps_spin.grid(row=3, column=1, sticky=tk.W)
+        # Video Settings
+        video_frame = ttk.LabelFrame(left_frame, text="🎬 Video Settings", padding="10")
+        video_frame.pack(fill="x")
 
-        ttk.Label(rec_frame, text="Format:").grid(row=4, column=0, sticky=tk.W, pady=6)
-        fmt_combo = ttk.Combobox(rec_frame, values=["mp4", "avi", "mkv"], textvariable=self.record_format, width=8)
-        fmt_combo.grid(row=4, column=1, sticky=tk.W)
+        ttk.Label(video_frame, text="FPS:").grid(row=0, column=0, sticky="w", pady=3)
+        fps_spin = ttk.Spinbox(video_frame, from_=5, to=120, textvariable=self.record_fps, width=12)
+        fps_spin.grid(row=0, column=1, sticky="w", padx=(5, 0), pady=3)
 
-        ttk.Label(rec_frame, text="Area:").grid(row=5, column=0, sticky=tk.W, pady=6)
-        area_combo = ttk.Combobox(rec_frame, values=["fullscreen", "custom"], textvariable=self.record_area_mode, width=12)
-        area_combo.grid(row=5, column=1, sticky=tk.W)
+        ttk.Label(video_frame, text="Format:").grid(row=1, column=0, sticky="w", pady=3)
+        fmt_combo = ttk.Combobox(video_frame, values=["mp4", "avi", "mkv"], 
+                                textvariable=self.record_format, width=10, state="readonly")
+        fmt_combo.grid(row=1, column=1, sticky="w", padx=(5, 0), pady=3)
 
-        area_custom_frame = ttk.Frame(rec_frame)
-        area_custom_frame.grid(row=6, column=0, columnspan=3, sticky=tk.W, pady=4)
-        ttk.Label(area_custom_frame, text="x:").pack(side=tk.LEFT)
-        ttk.Entry(area_custom_frame, textvariable=self.custom_x, width=6).pack(side=tk.LEFT, padx=2)
-        ttk.Label(area_custom_frame, text="y:").pack(side=tk.LEFT)
-        ttk.Entry(area_custom_frame, textvariable=self.custom_y, width=6).pack(side=tk.LEFT, padx=2)
-        ttk.Label(area_custom_frame, text="w:").pack(side=tk.LEFT)
-        ttk.Entry(area_custom_frame, textvariable=self.custom_w, width=6).pack(side=tk.LEFT, padx=2)
-        ttk.Label(area_custom_frame, text="h:").pack(side=tk.LEFT)
-        ttk.Entry(area_custom_frame, textvariable=self.custom_h, width=6).pack(side=tk.LEFT, padx=2)
+        # Middle column - Recording Area
+        area_frame = ttk.LabelFrame(middle_frame, text="📐 Recording Area", padding="10")
+        area_frame.grid(row=0, column=1, sticky="nsew", padx=(4, 4))
 
-        ttk.Checkbutton(rec_frame, text="Record Microphone", variable=self.record_audio_enabled).grid(
-            row=7, column=0, columnspan=2, sticky=tk.W
-        )
+        ttk.Label(area_frame, text="Mode:").grid(row=0, column=0, sticky="w", pady=3)
+        area_combo = ttk.Combobox(area_frame, values=["fullscreen", "custom"], 
+                                 textvariable=self.record_area_mode, width=12, state="readonly")
+        area_combo.grid(row=0, column=1, sticky="w", padx=(5, 0), pady=3)
 
-        rec_buttons = ttk.Frame(rec_frame)
-        rec_buttons.grid(row=8, column=0, columnspan=3, pady=10)
-        self.rec_start_btn = ttk.Button(rec_buttons, text="Start Recording", command=self.start_recording)
-        self.rec_start_btn.pack(side=tk.LEFT, padx=4)
-        self.rec_pause_btn = ttk.Button(rec_buttons, text="Pause", command=self.pause_recording, state="disabled")
-        self.rec_pause_btn.pack(side=tk.LEFT, padx=4)
-        self.rec_stop_btn = ttk.Button(rec_buttons, text="Stop Recording", command=self.stop_recording, state="disabled")
-        self.rec_stop_btn.pack(side=tk.LEFT, padx=4)
+        ttk.Label(area_frame, text="Custom Area:", style="Heading.TLabel").grid(
+            row=1, column=0, columnspan=2, sticky="w", pady=(10, 5))
+
+        custom_grid = ttk.Frame(area_frame)
+        custom_grid.grid(row=2, column=0, columnspan=2, sticky="w", pady=3)
+
+        ttk.Label(custom_grid, text="X:").grid(row=0, column=0, sticky="w")
+        ttk.Entry(custom_grid, textvariable=self.custom_x, width=6).grid(row=0, column=1, padx=(2, 8))
+        ttk.Label(custom_grid, text="Y:").grid(row=0, column=2, sticky="w")
+        ttk.Entry(custom_grid, textvariable=self.custom_y, width=6).grid(row=0, column=3, padx=(2, 0))
+
+        ttk.Label(custom_grid, text="W:").grid(row=1, column=0, sticky="w", pady=(5, 0))
+        ttk.Entry(custom_grid, textvariable=self.custom_w, width=6).grid(row=1, column=1, padx=(2, 8), pady=(5, 0))
+        ttk.Label(custom_grid, text="H:").grid(row=1, column=2, sticky="w", pady=(5, 0))
+        ttk.Entry(custom_grid, textvariable=self.custom_h, width=6).grid(row=1, column=3, padx=(2, 0), pady=(5, 0))
+
+        # Right column - Audio Settings & Controls
+        right_frame = ttk.Frame(middle_frame)
+        right_frame.grid(row=0, column=2, sticky="nsew", padx=(4, 0))
+
+        # Audio Settings
+        audio_frame = ttk.LabelFrame(right_frame, text="🎤 Audio Settings", padding="10")
+        audio_frame.pack(fill="x", pady=(0, 8))
+
+        audio_check = ttk.Checkbutton(audio_frame, text="Record Audio", 
+                                     variable=self.record_audio_enabled)
+        audio_check.pack(anchor="w", pady=(0, 5))
+
+        audio_grid = ttk.Frame(audio_frame)
+        audio_grid.pack(fill="x")
+
+        ttk.Label(audio_grid, text="Sample Rate:").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Spinbox(audio_grid, from_=8000, to=48000, textvariable=self.audio_samplerate, 
+                   width=8).grid(row=0, column=1, sticky="w", padx=(5, 0), pady=2)
+
+        ttk.Label(audio_grid, text="Channels:").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Spinbox(audio_grid, from_=1, to=2, textvariable=self.audio_channels, 
+                   width=8).grid(row=1, column=1, sticky="w", padx=(5, 0), pady=2)
+
+        # Recording Controls
+        controls_frame = ttk.LabelFrame(right_frame, text="🎮 Controls", padding="10")
+        controls_frame.pack(fill="x")
+
+        self.rec_start_btn = ttk.Button(controls_frame, text="🔴 Start", 
+                                       command=self.start_recording, style="Action.TButton")
+        self.rec_start_btn.pack(fill="x", pady=(0, 4))
+
+        self.rec_pause_btn = ttk.Button(controls_frame, text="⏸️ Pause", 
+                                       command=self.pause_recording, 
+                                       state="disabled", style="Action.TButton")
+        self.rec_pause_btn.pack(fill="x", pady=(0, 4))
+
+        self.rec_stop_btn = ttk.Button(controls_frame, text="⏹️ Stop", 
+                                      command=self.stop_recording, 
+                                      state="disabled", style="Action.TButton")
+        self.rec_stop_btn.pack(fill="x")
+
+        # Bottom section - Status
+        status_frame = ttk.LabelFrame(main_frame, text="📊 Recording Status", padding="10")
+        status_frame.pack(fill="x")
 
         self.rec_status_var = tk.StringVar(value="Idle")
-        ttk.Label(rec_frame, textvariable=self.rec_status_var, font=("Arial", 9, "bold")).grid(
-            row=9, column=0, columnspan=3, pady=6
-        )
+        status_display = ttk.Label(status_frame, textvariable=self.rec_status_var, 
+                                  style="Status.TLabel", font=("Segoe UI", 9, "bold"))
+        status_display.pack(pady=3)
+
+        # Add tooltips
+        self.add_recording_tooltips()
+
+    def add_screenshot_tooltips(self):
+        """Add tooltips for screenshot tab"""
+        ToolTip(self.capture_entry, "Enter key combination for manual capture (e.g., ctrl+alt+s)")
+        ToolTip(self.stop_entry, "Enter key combination to stop auto capture")
+        ToolTip(self.auto_start_entry, "Hotkey to start automatic screenshot capture")
+        ToolTip(self.auto_pause_entry, "Hotkey to pause/resume automatic capture")
+        ToolTip(self.auto_stop_entry, "Hotkey to completely stop automatic capture")
+        ToolTip(self.interval_spin, "Time interval between automatic screenshots (in seconds)")
+        ToolTip(self.duration_spin, "Maximum duration for auto capture (0 = unlimited)")
+        ToolTip(self.bg_btn, "Save settings and run the application in background with tray icon")
+
+    def add_recording_tooltips(self):
+        """Add tooltips for recording tab"""
+        ToolTip(self.rec_hot_entry, "Hotkey to start screen recording")
+        ToolTip(self.rec_stop_entry, "Hotkey to stop screen recording")
 
     def select_folder(self):
         """Select save folder"""
         folder = filedialog.askdirectory(title="Select Save Folder")
         if folder:
             self.folder_path.set(folder)
+
+    def manual_capture(self):
+        """Trigger manual capture"""
+        if not self.folder_path.get():
+            messagebox.showerror("Error", "Please select a save folder!")
+            return
+        
+        try:
+            self.screenshot_engine.manual_capture()
+            self.update_status("Manual capture completed")
+        except Exception as e:
+            messagebox.showerror("Error", f"Manual capture failed: {e}")
 
     def validate_hotkey(self, event):
         """Validate hotkey when user finishes typing"""
@@ -535,31 +729,70 @@ class ScreenshotGUI:
         normalized = text.replace(" ", "")
         entry.delete(0, tk.END)
         entry.insert(0, normalized)
+        
+        # Update hotkeys when changed
+        self._bind_hotkeys_to_buttons()
 
     def test_hotkeys(self):
         """Test hotkeys functionality"""
         try:
+            # Setup hotkeys
+            self._bind_hotkeys_to_buttons()
+            
             messagebox.showinfo(
-                "Test", "Press the hotkeys you assigned. If the app responds, they work."
+                "Hotkeys Activated", 
+                f"🎉 All hotkeys are now active and ready!\n\n"
+                f"📷 Manual Capture: {self.capture_hotkey.get()}\n"
+                f"▶️ Auto Start: {self.auto_start_hotkey.get()}\n"
+                f"⏸️ Auto Pause: {self.auto_pause_hotkey.get()}\n"
+                f"⏹️ Auto Stop: {self.auto_stop_hotkey.get()}\n"
+                f"🔴 Record Start: {self.record_hotkey.get()}\n"
+                f"🛑 Record Stop: {self.stop_record_hotkey.get()}\n\n"
+                f"Try pressing any of these key combinations!"
             )
         except Exception as e:
-            messagebox.showerror("Error", str(e))
+            messagebox.showerror("Error", f"Hotkey setup failed: {e}")
 
-    def manual_capture(self):
-        """Trigger manual capture"""
+    def save_and_run_background(self):
+        """Save settings and run in background WITHOUT starting auto capture"""
         if not self.folder_path.get():
             messagebox.showerror("Error", "Please select a save folder!")
             return
-        self.screenshot_engine.manual_capture()
+
+        try:
+            # Save settings
+            if hasattr(self.screenshot_engine, 'save_settings'):
+                self.screenshot_engine.save_settings()
+            
+            # Force disable auto capture
+            self.screenshot_engine.update_setting("auto_capture_enabled", False)
+            
+            # Setup hotkeys
+            self._bind_hotkeys_to_buttons()
+            
+            # Setup tray icon only if not already created
+            if not self.tray_icon_created:
+                if hasattr(self.screenshot_engine, 'setup_tray_icon'):
+                    self.screenshot_engine.setup_tray_icon()
+                    self.tray_icon_created = True
+                elif hasattr(self.screenshot_engine, 'create_tray_icon'):
+                    self.screenshot_engine.create_tray_icon()
+                    self.tray_icon_created = True
+            
+            self.update_status("Running in background - Hotkeys active")
+            self.root.withdraw()
+            messagebox.showinfo("Background Mode", 
+                              "✅ Application is now running in background!\n\n"
+                              "🔑 All hotkeys are active\n"
+                              "🖱️ Right-click system tray icon to access options\n"
+                              "👁️ Click tray icon to show this window again")
+                
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to run in background: {e}")
 
     def start_background(self):
-        """Start background capture process"""
-        if not self.folder_path.get():
-            messagebox.showerror("Error", "Please select a save folder!")
-            return
-
-        if self.screenshot_engine.start_background_capture():
-            self.root.withdraw()
+        """Start background capture process - DEPRECATED, use save_and_run_background instead"""
+        self.save_and_run_background()
 
     def start_recording(self):
         """Start screen recording"""
@@ -592,6 +825,10 @@ class ScreenshotGUI:
         """Quit the application"""
         self.screenshot_engine.cleanup()
         self.recording_controller.cleanup()
+        
+        # Reset tray icon flag when quitting
+        self.tray_icon_created = False
+        
         try:
             self.root.quit()
             self.root.destroy()
@@ -612,13 +849,13 @@ class ScreenshotGUI:
         ml = message.lower()
         if ml.startswith("recording"):
             self.rec_start_btn.config(state="disabled")
-            self.rec_pause_btn.config(state="normal", text="Pause")
+            self.rec_pause_btn.config(state="normal", text="⏸️ Pause")
             self.rec_stop_btn.config(state="normal")
         elif ml.startswith("paused"):
-            self.rec_pause_btn.config(state="normal", text="Resume")
+            self.rec_pause_btn.config(state="normal", text="▶️ Resume")
         elif ml.startswith("idle") or ml.startswith("saved"):
             self.rec_start_btn.config(state="normal")
-            self.rec_pause_btn.config(state="disabled", text="Pause")
+            self.rec_pause_btn.config(state="disabled", text="⏸️ Pause")
             self.rec_stop_btn.config(state="disabled")
 
     def update_memory_usage(self):
@@ -635,9 +872,7 @@ class ScreenshotGUI:
         self.root.mainloop()
 
     def update_auto_buttons(self, running: bool, paused: bool = False):
-        # running=True, paused=False  => Start disabled, Pause/Stop enabled
-        # running=True, paused=True   => Start enabled (resume), Pause disabled, Stop enabled
-        # running=False               => Start enabled, Pause/Stop disabled
+        """Update auto capture button states"""
         if running and not paused:
             self.auto_start_btn.config(state="disabled")
             self.auto_pause_btn.config(state="normal")
@@ -651,51 +886,92 @@ class ScreenshotGUI:
             self.auto_pause_btn.config(state="disabled")
             self.auto_stop_btn.config(state="disabled")
 
-    # NEW: Auto-capture control preferring engine methods
     def on_auto_start_btn(self):
+        """Start auto capture"""
         if not self.folder_path.get():
             messagebox.showerror("Error", "Please select a save folder!")
             return
+        
         try:
+            # Enable auto capture
+            self.screenshot_engine.update_setting("auto_capture_enabled", True)
+            
+            # Start auto capture
             if hasattr(self.screenshot_engine, "start_auto_capture"):
                 success = self.screenshot_engine.start_auto_capture()
-                if success:
-                    self.update_status("Auto Capture started")
-                    self.update_auto_buttons(running=True, paused=False)
-                else:
-                    messagebox.showerror("Error", "Failed to start auto capture")
             else:
-                # Fallback method
-                self.screenshot_engine.update_setting("auto_capture_enabled", True)
-                if self.screenshot_engine.start_background_capture():
-                    self.update_status("Auto Capture started")
-                    self.update_auto_buttons(running=True, paused=False)
+                success = self._start_auto_capture_thread()
+            
+            if success:
+                self.update_status("Auto Capture STARTED")
+                self.update_auto_buttons(running=True, paused=False)
+            else:
+                messagebox.showerror("Error", "Failed to start auto capture")
+                
         except Exception as e:
             messagebox.showerror("Error", f"Failed to start auto capture: {e}")
 
-    def on_auto_pause_btn(self):
+    def _start_auto_capture_thread(self):
+        """Start auto capture thread"""
         try:
-            if hasattr(self.screenshot_engine, "pause_auto_capture"):
-                self.screenshot_engine.pause_auto_capture()
-            else:
-                self.screenshot_engine.update_setting("auto_capture_enabled", False)
-            self.update_status("Auto Capture paused")
+            import threading
+            import time
+            
+            def auto_capture_loop():
+                self.screenshot_engine.update_setting("auto_capture_enabled", True)
+                
+                # Duration settings
+                duration_min = self.auto_capture_duration_min.get()
+                start_time = time.time()
+                end_time = start_time + (duration_min * 60) if duration_min > 0 else None
+                
+                while self.screenshot_engine.get_setting("auto_capture_enabled"):
+                    try:
+                        # Check duration limit
+                        if end_time and time.time() >= end_time:
+                            self.screenshot_engine.update_setting("auto_capture_enabled", False)
+                            self.root.after(0, lambda: self.update_status("Auto Capture - Duration completed"))
+                            self.root.after(0, lambda: self.update_auto_buttons(running=False))
+                            break
+                        
+                        # Take screenshot
+                        self.screenshot_engine.manual_capture()
+                        
+                        # Sleep with interrupt checking
+                        interval = self.auto_capture_interval.get()
+                        for i in range(interval):
+                            if not self.screenshot_engine.get_setting("auto_capture_enabled"):
+                                break
+                            time.sleep(1)
+                            
+                    except Exception:
+                        break
+            
+            thread = threading.Thread(target=auto_capture_loop, daemon=True)
+            thread.start()
+            return True
+        except Exception:
+            return False
+
+    def on_auto_pause_btn(self):
+        """Pause auto capture"""
+        try:
+            self.screenshot_engine.update_setting("auto_capture_enabled", False)
+            self.update_status("Auto Capture PAUSED")
             self.update_auto_buttons(running=True, paused=True)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to pause auto capture: {e}")
+            messagebox.showerror("Error", f"Failed to pause: {e}")
 
     def on_auto_stop_btn(self):
+        """Stop auto capture"""
         try:
+            self.screenshot_engine.update_setting("auto_capture_enabled", False)
             if hasattr(self.screenshot_engine, "stop_all_capture"):
                 self.screenshot_engine.stop_all_capture()
-            else:
-                self.screenshot_engine.update_setting("auto_capture_enabled", False)
-                if hasattr(self.screenshot_engine, 'is_capturing'):
-                    self.screenshot_engine.is_capturing = False
-            self.update_status("Auto Capture stopped")
+            self.update_status("Auto Capture STOPPED")
             self.update_auto_buttons(running=False)
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to stop auto capture: {e}")
+            messagebox.showerror("Error", f"Failed to stop: {e}")
 
 
 if __name__ == "__main__":
