@@ -25,6 +25,11 @@ import sounddevice as sd
 import queue
 import wave
 import subprocess
+# NEW: optional fallback for hotkeys
+try:
+    from pynput import keyboard as pynput_keyboard
+except Exception:
+    pynput_keyboard = None
 
 
 class ToolTip:
@@ -73,6 +78,12 @@ class ScreenshotApp:
         self.record_thread = None
         self.audio_queue = queue.Queue()
         self.audio_stream = None
+        # NEW: hotkey backends state
+        self.pynput_listener = None
+        self._debounce_last = {}
+        self._debounce_lock = threading.Lock()
+        # NEW: persistent end time for auto capture (None => unlimited)
+        self.auto_end_time = None
 
         # Optimize pyautogui
         pyautogui.FAILSAFE = False
@@ -89,12 +100,12 @@ class ScreenshotApp:
         self.stop_hotkey = tk.StringVar(value="ctrl+shift+q")
         self.auto_capture_enabled = tk.BooleanVar()
         self.auto_capture_interval = tk.IntVar(value=60)
-        self.auto_start_hotkey = tk.StringVar(value=\"ctrl+shift+a\")
-        self.auto_pause_hotkey = tk.StringVar(value=\"ctrl+shift+p\")
-        self.auto_stop_hotkey = tk.StringVar(value=\"ctrl+shift+o\")
-        self.auto_start_hotkey = tk.StringVar(value=\"ctrl+shift+a\")
-        self.auto_pause_hotkey = tk.StringVar(value=\"ctrl+shift+p\")
-        self.auto_stop_hotkey = tk.StringVar(value=\"ctrl+shift+o\")
+        # NEW: duration (minutes). 0 => unlimited
+        self.auto_capture_duration_min = tk.IntVar(value=0)
+        # Remove duplicate declarations - keep only one set
+        self.auto_start_hotkey = tk.StringVar(value="ctrl+shift+a")
+        self.auto_pause_hotkey = tk.StringVar(value="ctrl+shift+p")
+        self.auto_stop_hotkey = tk.StringVar(value="ctrl+shift+o")
 
         # recording variables
         self.record_hotkey = tk.StringVar(value="ctrl+shift+r")
@@ -121,9 +132,9 @@ class ScreenshotApp:
                     self.stop_hotkey.set(settings.get('stop_hotkey', 'ctrl+shift+q'))
                     self.auto_capture_enabled.set(settings.get('auto_capture_enabled', False))
                     self.auto_capture_interval.set(settings.get('auto_capture_interval', 60))
-                    self.auto_start_hotkey.set(settings.get('auto_start_hotkey', 'ctrl+shift+a'))
-                    self.auto_pause_hotkey.set(settings.get('auto_pause_hotkey', 'ctrl+shift+p'))
-                    self.auto_stop_hotkey.set(settings.get('auto_stop_hotkey', 'ctrl+shift+o'))
+                    # NEW: duration
+                    self.auto_capture_duration_min.set(settings.get('auto_capture_duration_min', 0))
+                    # Remove duplicate loading
                     self.auto_start_hotkey.set(settings.get('auto_start_hotkey', 'ctrl+shift+a'))
                     self.auto_pause_hotkey.set(settings.get('auto_pause_hotkey', 'ctrl+shift+p'))
                     self.auto_stop_hotkey.set(settings.get('auto_stop_hotkey', 'ctrl+shift+o'))
@@ -153,9 +164,9 @@ class ScreenshotApp:
                 'stop_hotkey': self.stop_hotkey.get(),
                 'auto_capture_enabled': self.auto_capture_enabled.get(),
                 'auto_capture_interval': self.auto_capture_interval.get(),
-                'auto_start_hotkey': self.auto_start_hotkey.get(),
-                'auto_pause_hotkey': self.auto_pause_hotkey.get(),
-                'auto_stop_hotkey': self.auto_stop_hotkey.get(),
+                # NEW: duration
+                'auto_capture_duration_min': self.auto_capture_duration_min.get(),
+                # Remove duplicate saves
                 'auto_start_hotkey': self.auto_start_hotkey.get(),
                 'auto_pause_hotkey': self.auto_pause_hotkey.get(),
                 'auto_stop_hotkey': self.auto_stop_hotkey.get(),
@@ -265,14 +276,26 @@ class ScreenshotApp:
         auto_frame = ttk.Frame(main_frame, borderwidth=1, relief="solid", padding="5")
         auto_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        auto_capture_cb = ttk.Checkbutton(auto_frame, text="Enable auto capture", 
-                                          variable=self.auto_capture_enabled)
-        auto_capture_cb.grid(row=0, column=0, columnspan=2, sticky=tk.W)
+        # REPLACE checkbox with 3 action buttons (store refs + initial states)
+        action_btns = ttk.Frame(auto_frame)
+        action_btns.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+        self.auto_start_btn = ttk.Button(action_btns, text="Start Auto", command=self.start_auto_capture)
+        self.auto_start_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.auto_pause_btn = ttk.Button(action_btns, text="Pause", command=self.pause_auto_capture, state="disabled")
+        self.auto_pause_btn.pack(side=tk.LEFT, padx=5)
+        self.auto_stop_btn = ttk.Button(action_btns, text="Stop Auto", command=self.stop_all_capture, state="disabled")
+        self.auto_stop_btn.pack(side=tk.LEFT, padx=5)
 
         ttk.Label(auto_frame, text="Interval (seconds):").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.interval_spin = ttk.Spinbox(auto_frame, from_=1, to=3600, 
                                         textvariable=self.auto_capture_interval, width=10)
         self.interval_spin.grid(row=1, column=1, sticky=tk.W, padx=5)
+
+        # NEW: duration in minutes (0 => unlimited)
+        ttk.Label(auto_frame, text="Duration (minutes):").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.duration_spin = ttk.Spinbox(auto_frame, from_=0, to=1440,
+                                         textvariable=self.auto_capture_duration_min, width=10)
+        self.duration_spin.grid(row=2, column=1, sticky=tk.W, padx=5)
 
         control_frame = ttk.Frame(main_frame)
         control_frame.grid(row=7, column=0, columnspan=2, pady=(15, 10))
@@ -301,6 +324,7 @@ class ScreenshotApp:
         ToolTip(self.capture_entry, "Press key combination (e.g., ctrl+alt+s)")
         ToolTip(self.stop_entry, "Press a different key combination")
         ToolTip(self.interval_spin, "Time between auto captures")
+        ToolTip(self.duration_spin, "Auto-capture max duration in minutes (0 = unlimited)")
 
         folder_entry.focus_set()
 
@@ -364,22 +388,116 @@ class ScreenshotApp:
             self.folder_path.set(folder)
 
     def setup_hotkeys(self):
-        """Set up global hotkeys"""
+        """Set up global hotkeys with fallback and debounce"""
+        # stop previous listeners
+        self._stop_hotkeys()
+        # Build hotkey -> (name, handler) map once
+        combos = {}
+        if self.capture_hotkey.get():
+            combos[self.capture_hotkey.get()] = ("capture", self.manual_capture)
+        if self.stop_hotkey.get():
+            combos[self.stop_hotkey.get()] = ("stop_all", self.stop_all_capture)
+        if self.auto_start_hotkey.get():
+            combos[self.auto_start_hotkey.get()] = ("auto_start", self.start_auto_capture)
+        if self.auto_pause_hotkey.get():
+            combos[self.auto_pause_hotkey.get()] = ("auto_pause", self.pause_auto_capture)
+        if self.auto_stop_hotkey.get():
+            combos[self.auto_stop_hotkey.get()] = ("auto_stop", self.stop_all_capture)
+        if self.record_hotkey.get():
+            combos[self.record_hotkey.get()] = ("rec_toggle", self.toggle_recording)
+        if self.stop_record_hotkey.get():
+            combos[self.stop_record_hotkey.get()] = ("rec_stop", self.stop_recording)
+
+        used_keyboard = False
+        used_pynput = False
+
+        # Try keyboard backend first
         try:
-            keyboard.unhook_all()
-            keyboard.add_hotkey(self.capture_hotkey.get(), self.manual_capture)
-            keyboard.add_hotkey(self.stop_hotkey.get(), self.stop_all_capture)
-            keyboard.add_hotkey(self.auto_start_hotkey.get(), self.start_auto_capture)
-            keyboard.add_hotkey(self.auto_pause_hotkey.get(), self.pause_auto_capture)
-            keyboard.add_hotkey(self.auto_stop_hotkey.get(), self.stop_all_capture)
-            keyboard.add_hotkey(self.auto_start_hotkey.get(), self.start_auto_capture)
-            keyboard.add_hotkey(self.auto_pause_hotkey.get(), self.pause_auto_capture)
-            keyboard.add_hotkey(self.auto_stop_hotkey.get(), self.stop_all_capture)
-            # recording hotkeys
-            keyboard.add_hotkey(self.record_hotkey.get(), self.toggle_recording)
-            keyboard.add_hotkey(self.stop_record_hotkey.get(), self.stop_recording)
+            import keyboard as kb
+            kb.unhook_all()
+            for hk, (name, func) in combos.items():
+                kb.add_hotkey(hk, self._wrap_action(name, func))
+            used_keyboard = True
+            print(f"Registered {len(combos)} hotkeys with keyboard backend")
         except Exception as e:
-            print(f"Error setting up hotkeys: {e}")
+            print(f"keyboard backend failed: {e}")
+
+        # Also start pynput fallback if available
+        try:
+            if pynput_keyboard:
+                mapping = {}
+                for hk, (name, func) in combos.items():
+                    combo = self._to_pynput_combo(hk)
+                    if combo:
+                        mapping[combo] = self._wrap_action(name, func)
+                if mapping:
+                    self.pynput_listener = pynput_keyboard.GlobalHotKeys(mapping)
+                    self.pynput_listener.start()
+                    used_pynput = True
+                    print(f"Registered {len(mapping)} hotkeys with pynput backend")
+        except Exception as e:
+            print(f"pynput backend failed: {e}")
+
+        # Update status with backend info
+        try:
+            if used_keyboard and used_pynput:
+                self.status_var.set("Hotkeys active (keyboard + pynput)")
+            elif used_keyboard:
+                self.status_var.set("Hotkeys active (keyboard)")
+            elif used_pynput:
+                self.status_var.set("Hotkeys active (pynput)")
+            else:
+                self.status_var.set("Hotkeys inactive - Check console for errors")
+        except Exception:
+            pass
+
+    # NEW: convert 'ctrl+shift+s' -> '<ctrl>+<shift>+s'
+    def _to_pynput_combo(self, s: str) -> str:
+        if not s:
+            return ""
+        parts = [p.strip().lower() for p in s.split("+") if p.strip()]
+        out = []
+        for p in parts:
+            if p in ("ctrl", "control", "ctrl_l", "ctrl_r"):
+                out.append("<ctrl>")
+            elif p in ("shift", "shift_l", "shift_r"):
+                out.append("<shift>")
+            elif p in ("alt", "alt_l", "alt_r"):
+                out.append("<alt>")
+            elif p in ("win", "super", "cmd", "meta"):
+                out.append("<cmd>")  # best-effort
+            else:
+                out.append(p)
+        return "+".join(out)
+
+    # NEW: debounce wrapper so both backends can coexist safely
+    def _wrap_action(self, name, func):
+        def _wrapped():
+            now = time.time()
+            with self._debounce_lock:
+                last = self._debounce_last.get(name, 0)
+                if now - last < 0.2:
+                    return
+                self._debounce_last[name] = now
+            try:
+                func()
+            except Exception as e:
+                print(f"Hotkey '{name}' handler error: {e}")
+        return _wrapped
+
+    # NEW: stop all hotkey listeners
+    def _stop_hotkeys(self):
+        try:
+            import keyboard as kb
+            kb.unhook_all()
+        except Exception:
+            pass
+        if self.pynput_listener:
+            try:
+                self.pynput_listener.stop()
+            except Exception:
+                pass
+            self.pynput_listener = None
 
     def manual_capture(self):
         """Manual screenshot capture"""
@@ -405,11 +523,16 @@ class ScreenshotApp:
     def validate_hotkey(self, event):
         """Validate hotkey when user finishes typing"""
         entry = event.widget
-        text = entry.get().strip().lower()
+        text = entry.get().strip().lower().replace(" ", "")
         if not text:
             messagebox.showerror("Error", "Hotkey cannot be empty!")
             return
-        # minimal validation (user responsible for valid combos)
+        # normalize back into the entry to avoid typos with spaces/case
+        entry.delete(0, tk.END)
+        entry.insert(0, text)
+        # rebind after edits so new hotkeys work immediately
+        self.save_settings()
+        self.setup_hotkeys()
 
     def test_hotkeys(self):
         try:
@@ -418,11 +541,39 @@ class ScreenshotApp:
             messagebox.showerror("Error", str(e))
 
     def auto_capture_loop(self):
-        while self.auto_capture_enabled.get() and self.is_capturing:
+        """Fixed auto capture loop with proper duration handling"""
+        # Set absolute end time when starting (not when checking)
+        start_time = time.time()
+        duration_minutes = max(0, int(self.auto_capture_duration_min.get()))
+        if duration_minutes > 0:
+            self.auto_end_time = start_time + (duration_minutes * 60)
+            print(f"Auto capture will run for {duration_minutes} minutes")
+        else:
+            self.auto_end_time = None
+            print("Auto capture will run indefinitely")
+
+        while self.is_capturing and self.auto_capture_enabled.get():
+            # Check if duration limit reached
+            if self.auto_end_time is not None:
+                current_time = time.time()
+                if current_time >= self.auto_end_time:
+                    print(f"Duration limit reached. Stopping auto capture.")
+                    self.stop_all_capture()
+                    break
+                else:
+                    remaining = (self.auto_end_time - current_time) / 60
+                    print(f"Auto capture running - {remaining:.1f} minutes remaining")
+
             try:
                 self.manual_capture()
-                for _ in range(self.auto_capture_interval.get()):
-                    if not self.auto_capture_enabled.get() or not self.is_capturing:
+                # Sleep in small intervals to allow for responsive stopping
+                interval = int(self.auto_capture_interval.get())
+                for i in range(interval):
+                    if not self.is_capturing or not self.auto_capture_enabled.get():
+                        break
+                    # Check duration again during sleep
+                    if self.auto_end_time is not None and time.time() >= self.auto_end_time:
+                        self.stop_all_capture()
                         break
                     time.sleep(1)
             except Exception as e:
@@ -434,9 +585,14 @@ class ScreenshotApp:
             messagebox.showerror("Error", "Please select a save folder!")
             return
         self.save_settings()
+        # ensure hotkeys bound when going background
         self.setup_hotkeys()
         self.is_capturing = True
+        # set end time if user enabled auto before background
         if self.auto_capture_enabled.get():
+            if self.auto_end_time is None:
+                dur = max(0, int(self.auto_capture_duration_min.get())) * 60
+                self.auto_end_time = (time.time() + dur) if dur > 0 else None
             self.auto_capture_thread = threading.Thread(target=self.auto_capture_loop, daemon=True)
             self.auto_capture_thread.start()
 
@@ -450,9 +606,14 @@ class ScreenshotApp:
 
 
     def stop_all_capture(self):
+        """Stop all capture activities"""
+        print("Stopping all capture...")
         self.is_capturing = False
         self.auto_capture_enabled.set(False)
+        # Reset end time
+        self.auto_end_time = None
         self.status_var.set("Stopped")
+        self.update_auto_buttons(running=False)
 
     def create_tray_icon(self):
         if self.tray_icon and self.tray_icon.visible:
@@ -490,7 +651,8 @@ class ScreenshotApp:
                 self.tray_icon.stop()
             except:
                 pass
-        keyboard.unhook_all()
+        # NEW: stop all hotkey listeners cleanly
+        self._stop_hotkeys()
         try:
             self.root.quit()
             self.root.destroy()
@@ -689,30 +851,53 @@ class ScreenshotApp:
             gc.collect()
 
 
-    def start_auto_capture(self):
-        if not self.is_capturing:
-            self.is_capturing = True
-            self.auto_capture_enabled.set(True)
-            self.auto_capture_thread = threading.Thread(target=self.auto_capture_loop, daemon=True)
-            self.auto_capture_thread.start()
-            self.status_var.set("Auto Capture started")
+    def update_auto_buttons(self, running: bool, paused: bool = False):
+        # running=True, paused=False => Start disabled, Pause/Stop enabled
+        # running=True, paused=True  => Start enabled (resume), Pause disabled, Stop enabled
+        # running=False              => Start enabled, Pause/Stop disabled
+        if running and not paused:
+            self.auto_start_btn.config(state="disabled")
+            self.auto_pause_btn.config(state="normal")
+            self.auto_stop_btn.config(state="normal")
+        elif running and paused:
+            self.auto_start_btn.config(state="normal")
+            self.auto_pause_btn.config(state="disabled")
+            self.auto_stop_btn.config(state="normal")
         else:
-            self.status_var.set("Already capturing")
+            self.auto_start_btn.config(state="normal")
+            self.auto_pause_btn.config(state="disabled")
+            self.auto_stop_btn.config(state="disabled")
+
+    def start_auto_capture(self):
+        """Start auto capture with proper state management"""
+        if not self.folder_path.get():
+            messagebox.showerror("Error", "Please select a save folder!")
+            return
+
+        print("Starting auto capture...")
+        
+        # Stop any existing capture first
+        if self.is_capturing:
+            self.stop_all_capture()
+            time.sleep(0.5)  # Brief pause
+
+        # Start new capture session
+        self.is_capturing = True
+        self.auto_capture_enabled.set(True)
+        
+        # Start the capture thread
+        self.auto_capture_thread = threading.Thread(target=self.auto_capture_loop, daemon=True)
+        self.auto_capture_thread.start()
+        
+        self.status_var.set("Auto Capture started")
+        self.update_auto_buttons(running=True, paused=False)
 
     def pause_auto_capture(self):
+        """Pause auto capture without stopping the main capture state"""
         if self.is_capturing and self.auto_capture_enabled.get():
             self.auto_capture_enabled.set(False)
             self.status_var.set("Auto Capture paused")
+            self.update_auto_buttons(running=True, paused=True)
+            print("Auto capture paused")
         else:
             self.status_var.set("Auto Capture not active")
-
-    # ----------------- end recording logic -----------------
-
-    def run(self):
-        self.root.mainloop()
-
-
-if __name__ == "__main__":
-    app = ScreenshotApp()
-    app.run()
-    

@@ -7,6 +7,7 @@ from tkinter import filedialog, messagebox, ttk
 import threading
 from screenshot_engine import ScreenshotEngine
 from recording_controller import RecordingController
+import keyboard  # for sending the configured auto hotkeys via buttons
 
 
 class ToolTip:
@@ -83,7 +84,8 @@ class ScreenshotGUI:
         self.stop_hotkey = tk.StringVar()
         self.auto_capture_enabled = tk.BooleanVar()
         self.auto_capture_interval = tk.IntVar()
-
+        # NEW: duration (minutes)
+        self.auto_capture_duration_min = tk.IntVar()
         # NEW: Auto-capture hotkeys (user-configurable)
         self.auto_start_hotkey = tk.StringVar()
         self.auto_pause_hotkey = tk.StringVar()
@@ -121,7 +123,10 @@ class ScreenshotGUI:
         self.auto_capture_interval.set(
             self.screenshot_engine.get_setting("auto_capture_interval")
         )
-
+        # NEW: duration (minutes), default 0 => unlimited
+        self.auto_capture_duration_min.set(
+            self.screenshot_engine.get_setting("auto_capture_duration_min") or 0
+        )
         # NEW: auto hotkeys with defaults if engine chưa có
         self.auto_start_hotkey.set(
             self.screenshot_engine.get_setting("auto_start_hotkey") or "ctrl+shift+a"
@@ -163,15 +168,11 @@ class ScreenshotGUI:
         self.folder_path.trace_add("write", lambda *args: self._update_folder_path())
         self.capture_hotkey.trace_add(
             "write",
-            lambda *args: self.screenshot_engine.update_setting(
-                "capture_hotkey", self.capture_hotkey.get()
-            ),
+            lambda *args: self._update_hotkey("capture_hotkey", self.capture_hotkey.get())
         )
         self.stop_hotkey.trace_add(
             "write",
-            lambda *args: self.screenshot_engine.update_setting(
-                "stop_hotkey", self.stop_hotkey.get()
-            ),
+            lambda *args: self._update_hotkey("stop_hotkey", self.stop_hotkey.get())
         )
         self.auto_capture_enabled.trace_add(
             "write",
@@ -185,25 +186,25 @@ class ScreenshotGUI:
                 "auto_capture_interval", self.auto_capture_interval.get()
             ),
         )
-
-        # NEW: Bind auto hotkeys to engine
-        self.auto_start_hotkey.trace_add(
+        # NEW: duration binding
+        self.auto_capture_duration_min.trace_add(
             "write",
             lambda *args: self.screenshot_engine.update_setting(
-                "auto_start_hotkey", self.auto_start_hotkey.get()
+                "auto_capture_duration_min", self.auto_capture_duration_min.get()
             ),
+        )
+        # NEW: Bind auto hotkeys to engine with hotkey refresh
+        self.auto_start_hotkey.trace_add(
+            "write",
+            lambda *args: self._update_hotkey("auto_start_hotkey", self.auto_start_hotkey.get())
         )
         self.auto_pause_hotkey.trace_add(
             "write",
-            lambda *args: self.screenshot_engine.update_setting(
-                "auto_pause_hotkey", self.auto_pause_hotkey.get()
-            ),
+            lambda *args: self._update_hotkey("auto_pause_hotkey", self.auto_pause_hotkey.get())
         )
         self.auto_stop_hotkey.trace_add(
             "write",
-            lambda *args: self.screenshot_engine.update_setting(
-                "auto_stop_hotkey", self.auto_stop_hotkey.get()
-            ),
+            lambda *args: self._update_hotkey("auto_stop_hotkey", self.auto_stop_hotkey.get())
         )
 
         # Recording controller bindings
@@ -285,6 +286,13 @@ class ScreenshotGUI:
         folder = self.folder_path.get()
         self.screenshot_engine.update_setting("folder_path", folder)
         self.recording_controller.update_setting("folder_path", folder)
+
+    def _update_hotkey(self, setting_name, value):
+        """Update hotkey setting and refresh hotkey registration"""
+        self.screenshot_engine.update_setting(setting_name, value)
+        # Refresh hotkeys in engine
+        if hasattr(self.screenshot_engine, 'setup_hotkeys'):
+            self.screenshot_engine.setup_hotkeys()
 
     def setup_gui(self):
         self.root.title("Advanced Screenshot & ScreenRecorder Tool")
@@ -380,16 +388,29 @@ class ScreenshotGUI:
         auto_frame = ttk.Frame(main_frame, borderwidth=1, relief="solid", padding="5")
         auto_frame.grid(row=6, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=5)
 
-        auto_capture_cb = ttk.Checkbutton(
-            auto_frame, text="Enable auto capture", variable=self.auto_capture_enabled
-        )
-        auto_capture_cb.grid(row=0, column=0, columnspan=2, sticky=tk.W)
+        # REPLACE checkbox with 3 action buttons
+        action_btns = ttk.Frame(auto_frame)
+        action_btns.grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 5))
+        # store refs for state toggling
+        self.auto_start_btn = ttk.Button(action_btns, text="Start Auto", command=self.on_auto_start_btn)
+        self.auto_start_btn.pack(side=tk.LEFT, padx=(0, 5))
+        self.auto_pause_btn = ttk.Button(action_btns, text="Pause", command=self.on_auto_pause_btn, state="disabled")
+        self.auto_pause_btn.pack(side=tk.LEFT, padx=5)
+        self.auto_stop_btn = ttk.Button(action_btns, text="Stop Auto", command=self.on_auto_stop_btn, state="disabled")
+        self.auto_stop_btn.pack(side=tk.LEFT, padx=5)
 
         ttk.Label(auto_frame, text="Interval (seconds):").grid(row=1, column=0, sticky=tk.W, pady=2)
         self.interval_spin = ttk.Spinbox(
             auto_frame, from_=1, to=3600, textvariable=self.auto_capture_interval, width=10
         )
         self.interval_spin.grid(row=1, column=1, sticky=tk.W, padx=5)
+
+        # NEW: duration in minutes (0 => unlimited)
+        ttk.Label(auto_frame, text="Duration (minutes):").grid(row=2, column=0, sticky=tk.W, pady=2)
+        self.duration_spin = ttk.Spinbox(
+            auto_frame, from_=0, to=1440, textvariable=self.auto_capture_duration_min, width=10
+        )
+        self.duration_spin.grid(row=2, column=1, sticky=tk.W, padx=5)
 
         control_frame = ttk.Frame(main_frame)
         control_frame.grid(row=7, column=0, columnspan=2, pady=(15, 10))
@@ -431,6 +452,7 @@ class ScreenshotGUI:
         ToolTip(self.auto_pause_entry, "Hotkey to PAUSE auto capture")
         ToolTip(self.auto_stop_entry, "Hotkey to STOP auto capture")
         ToolTip(self.interval_spin, "Time between auto captures")
+        ToolTip(self.duration_spin, "Auto-capture max duration in minutes (0 = unlimited)")
 
         folder_entry.focus_set()
 
@@ -509,6 +531,10 @@ class ScreenshotGUI:
         if not text:
             messagebox.showerror("Error", "Hotkey cannot be empty!")
             return
+        # Normalize the hotkey format
+        normalized = text.replace(" ", "")
+        entry.delete(0, tk.END)
+        entry.insert(0, normalized)
 
     def test_hotkeys(self):
         """Test hotkeys functionality"""
@@ -607,6 +633,69 @@ class ScreenshotGUI:
     def run(self):
         """Start the GUI main loop"""
         self.root.mainloop()
+
+    def update_auto_buttons(self, running: bool, paused: bool = False):
+        # running=True, paused=False  => Start disabled, Pause/Stop enabled
+        # running=True, paused=True   => Start enabled (resume), Pause disabled, Stop enabled
+        # running=False               => Start enabled, Pause/Stop disabled
+        if running and not paused:
+            self.auto_start_btn.config(state="disabled")
+            self.auto_pause_btn.config(state="normal")
+            self.auto_stop_btn.config(state="normal")
+        elif running and paused:
+            self.auto_start_btn.config(state="normal")
+            self.auto_pause_btn.config(state="disabled")
+            self.auto_stop_btn.config(state="normal")
+        else:
+            self.auto_start_btn.config(state="normal")
+            self.auto_pause_btn.config(state="disabled")
+            self.auto_stop_btn.config(state="disabled")
+
+    # NEW: Auto-capture control preferring engine methods
+    def on_auto_start_btn(self):
+        if not self.folder_path.get():
+            messagebox.showerror("Error", "Please select a save folder!")
+            return
+        try:
+            if hasattr(self.screenshot_engine, "start_auto_capture"):
+                success = self.screenshot_engine.start_auto_capture()
+                if success:
+                    self.update_status("Auto Capture started")
+                    self.update_auto_buttons(running=True, paused=False)
+                else:
+                    messagebox.showerror("Error", "Failed to start auto capture")
+            else:
+                # Fallback method
+                self.screenshot_engine.update_setting("auto_capture_enabled", True)
+                if self.screenshot_engine.start_background_capture():
+                    self.update_status("Auto Capture started")
+                    self.update_auto_buttons(running=True, paused=False)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to start auto capture: {e}")
+
+    def on_auto_pause_btn(self):
+        try:
+            if hasattr(self.screenshot_engine, "pause_auto_capture"):
+                self.screenshot_engine.pause_auto_capture()
+            else:
+                self.screenshot_engine.update_setting("auto_capture_enabled", False)
+            self.update_status("Auto Capture paused")
+            self.update_auto_buttons(running=True, paused=True)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to pause auto capture: {e}")
+
+    def on_auto_stop_btn(self):
+        try:
+            if hasattr(self.screenshot_engine, "stop_all_capture"):
+                self.screenshot_engine.stop_all_capture()
+            else:
+                self.screenshot_engine.update_setting("auto_capture_enabled", False)
+                if hasattr(self.screenshot_engine, 'is_capturing'):
+                    self.screenshot_engine.is_capturing = False
+            self.update_status("Auto Capture stopped")
+            self.update_auto_buttons(running=False)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to stop auto capture: {e}")
 
 
 if __name__ == "__main__":
