@@ -4,6 +4,20 @@
   "stop_hotkey": "alt+e",
   "auto_capture_enabled": false,
   "auto_capture_interval": 3,
+  "auto_capture_duration_min": 1,
+  "auto_start_hotkey": "Alt+Q",
+  "auto_pause_hotkey": "Alt+Y",
+  "auto_stop_hotkey": "Alt+U",
+  "capture_format": "png",
+  "capture_quality": 95,
+  "capture_region": "fullscreen",
+  "custom_region": {
+    "x": 0,
+    "y": 0,
+    "width": 1920,
+    "height": 1080
+  },
+  "monitor_index": 1,
   "record_hotkey": "Alt+T",
   "stop_record_hotkey": "alt+y",
   "record_fps": 20,
@@ -15,9 +29,5 @@
   "custom_h": 600,
   "record_audio_enabled": false,
   "audio_samplerate": 44100,
-  "audio_channels": 1,
-  "auto_start_hotkey": "Alt+Q",
-  "auto_capture_duration_min": 1,
-  "auto_pause_hotkey": "Alt+Y",
-  "auto_stop_hotkey": "Alt+U"
+  "audio_channels": 1
 }

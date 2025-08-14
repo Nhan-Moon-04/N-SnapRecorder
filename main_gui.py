@@ -167,6 +167,8 @@ class ScreenshotGUI:
             "write",
             lambda *args: self._update_hotkey("stop_hotkey", self.stop_hotkey.get())
         )
+        
+        
         self.auto_capture_interval.trace_add(
             "write",
             lambda *args: self.screenshot_engine.update_setting(
@@ -517,7 +519,7 @@ class ScreenshotGUI:
 
         self.bg_btn = ttk.Button(control_buttons, text="💾 Save & Run Background", 
                                 command=self.save_and_run_background, style="Action.TButton")
-        self.bg_btn.pack(side="left", padx=(0, 8))
+        self.bg_btn.pack(side="left", padx=(0, 9))
 
         capture_now_btn = ttk.Button(control_buttons, text="📷 Capture Now", 
                                     command=self.manual_capture, style="Action.TButton")
